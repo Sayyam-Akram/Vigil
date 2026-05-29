@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-export default function Hero({ onScanVendor, isLoading, vendorData }) {
+export default function Hero({ onScanVendor, isLoading, vendorData, replayMode }) {
   const [targetInput, setTargetInput] = useState('');
   const [radarDots, setRadarDots] = useState([]);
   
@@ -43,6 +43,7 @@ export default function Hero({ onScanVendor, isLoading, vendorData }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (replayMode) return;
     if (!targetInput.trim() || isLoading) return;
     onScanVendor(targetInput.trim());
   };
@@ -66,7 +67,7 @@ export default function Hero({ onScanVendor, isLoading, vendorData }) {
         <div className="lg:col-span-7 flex flex-col space-y-6">
           <div className="flex items-center gap-2 text-brand-green uppercase tracking-widest text-[11px] font-bold">
             <span className="w-2 h-2 rounded-full bg-brand-green animate-pulse" />
-            ● SENTINEL ACTIVE · THIRD-PARTY RISK INTELLIGENCE
+            ● VIGIL ACTIVE · VENDOR SECURITY PLATFORM
           </div>
 
           <h1 className="font-serif italic font-bold text-5xl sm:text-6xl lg:text-7xl text-text-primary leading-[1.05] tracking-tight">
@@ -75,7 +76,7 @@ export default function Hero({ onScanVendor, isLoading, vendorData }) {
           </h1>
 
           <p className="font-mono text-xs text-text-secondary max-w-xl leading-relaxed">
-            The vendor questionnaire is dead. Static certifications fail to detect live breaches. This is what replaces it. Query any vendor domain to run a live intelligence scan.
+            Continuous threat intelligence that detects vendor breaches before public disclosure. Search a monitored vendor to replay their detection timeline, or enter any vendor name for a live scan.
           </p>
 
           {/* Interactive Search Console Input */}
@@ -84,16 +85,16 @@ export default function Hero({ onScanVendor, isLoading, vendorData }) {
               type="text" 
               value={targetInput}
               onChange={(e) => setTargetInput(e.target.value)}
-              placeholder="Enter vendor name (e.g. Snowflake)..." 
+              placeholder="Search vendor (e.g. Snowflake, Okta)..." 
               className="bg-bg-surface border border-white/10 rounded-lg px-4 py-3 font-mono text-xs text-text-primary focus:outline-none focus:border-brand-green/40 focus:ring-1 focus:ring-brand-green/20 flex-1 transition-all"
               disabled={isLoading}
             />
             <button 
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || replayMode}
               className="bg-brand-green hover:bg-[#02e68f] text-bg-primary font-bold font-mono text-xs px-6 py-3 rounded-lg transition-all duration-200 disabled:opacity-50 hover:-translate-y-0.5"
             >
-              {isLoading ? 'ANALYZING...' : 'RUN LIVE SCAN →'}
+              {replayMode ? <span className="animate-pulse">REPLAYING TIMELINE...</span> : isLoading ? 'ANALYZING...' : 'ANALYZE VENDOR →'}
             </button>
           </form>
 
@@ -219,7 +220,7 @@ export default function Hero({ onScanVendor, isLoading, vendorData }) {
             </div>
             
             <div className="font-mono text-[9px] text-text-tertiary uppercase tracking-[0.18em]">
-              MONITORING 4 SOURCES · UPDATING EVERY 30s
+              MONITORING 6 SOURCES · CONTINUOUS SIGNAL INTELLIGENCE
             </div>
           </div>
         </div>

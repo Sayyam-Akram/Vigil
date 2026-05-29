@@ -2,31 +2,31 @@ import React from 'react';
 
 export default function PhaseTwo() {
   const currentFeatures = [
-    "SERP / news signal monitoring",
-    "Paste site credential scanning",
-    "Job board departure signals",
-    "GitHub public repo scanning",
-    "Layered filter pipeline (keyword → rule → LLM)",
-    "Groq / Llama 3.1 70B risk scoring",
-    "0-10 vendor risk score",
-    "PDF evidence report generation",
-    "DORA / SOC 2 / ISO 27001 compliance mapping",
-    "Retrospective Snowflake validation",
-    "React frontend + FastAPI backend",
-    "Bright Data infrastructure integration"
+    'Continuous vendor threat monitoring engine',
+    'Monitored vendor directory with risk profiles',
+    'Signal accumulation scoring (multi-day intelligence)',
+    'Timeline replay for retrospective breach validation',
+    'Layered AI pipeline (keyword → rule → LLM)',
+    'Groq / Llama 3.3 70B deep risk analysis',
+    'Live scan for unknown vendors',
+    'Cryptographic PDF evidence report (Ed25519)',
+    'DORA / SOC 2 / ISO 27001 compliance mapping',
+    'Bright Data SERP + GitHub API + HIBP integration',
+    'Retrospective Snowflake & Okta breach validation',
+    'React 19 + FastAPI full-stack architecture'
   ];
 
   const plannedFeatures = [
-    "Multi-tenant vendor portfolio management",
-    "Real-time Slack / Teams / webhook alert delivery",
-    "CRM integration (Salesforce, HubSpot)",
-    "Dark web monitoring layer (legal review required)",
-    "SEC EDGAR structured filing parser",
-    "NIS2 / EU AI Act compliance mapping",
-    "Historical trend scoring (30/60/90 day windows)",
-    "API access for enterprise integration",
-    "Vendor self-attestation portal",
-    "Broker/underwriter API integration"
+    'Vendor onboarding & subscription management',
+    'Organization dashboard (multi-vendor portfolio)',
+    'Real-time Slack / Teams / Email alert delivery',
+    'Dark web monitoring layer',
+    'Historical trend scoring (30/60/90 day windows)',
+    'API access for enterprise integration',
+    'Vendor self-attestation portal',
+    'CRM integration (Salesforce, HubSpot)',
+    'NIS2 / EU AI Act compliance mapping',
+    'Automated weekly vendor health digest'
   ];
 
   return (
@@ -39,10 +39,10 @@ export default function PhaseTwo() {
             <span>● ROADMAP · PHASE 2 COMMITMENTS</span>
           </div>
           <h2 className="font-serif italic text-3xl sm:text-4xl text-text-primary">
-            v0.1.0 ships today. <span className="text-brand-blue">Here is what Phase 2 looks like.</span>
+            v0.1.0 ships today. <span className="text-brand-blue">Here is what comes next.</span>
           </h2>
           <p className="font-mono text-xs text-text-secondary max-w-2xl leading-relaxed">
-            This is v0.1.0 — built during the Bright Data Hackathon, May 2026. The pipeline works. The signals are real. The retrospective validation against Snowflake is entirely reproducible. What follows are honest commitments, not vaporware claims.
+            This is v0.1.0 — built during the Bright Data Hackathon, May 2026. The detection engine works. The signals are real. The Snowflake retrospective validation is reproducible. What follows are honest commitments.
           </p>
         </div>
 
@@ -85,11 +85,10 @@ export default function PhaseTwo() {
 
         {/* Version Stamp Metadata */}
         <div className="text-center font-mono text-[10px] text-text-tertiary pt-8 space-y-2 border-t border-white/5">
-          <div className="text-text-secondary font-bold">VendorSentinel v0.1.0</div>
+          <div className="text-text-secondary font-bold">Vigil v0.1.0</div>
           <div className="leading-relaxed">
             Built for the Bright Data Web Data UNLOCKED Hackathon · May 2026<br />
-            Powered by Bright Data Infrastructure · Groq · FastAPI · React 19 · Tailwind CSS v3<br />
-            MIT Licensed · Source Repository verified
+            Powered by Bright Data Infrastructure · Groq · FastAPI · React 19 · Tailwind CSS v3
           </div>
         </div>
 

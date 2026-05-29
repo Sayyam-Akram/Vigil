@@ -1,4 +1,4 @@
-// Centralized mock data for VendorSentinel matching backend API contracts exactly
+// Centralized mock data for Vigil matching backend API contracts exactly
 
 export const SNOWFLAKE_ANALYSIS = {
   vendor: "Snowflake",

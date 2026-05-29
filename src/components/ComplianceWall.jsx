@@ -41,7 +41,7 @@ export default function ComplianceWall() {
             Built for the <span className="text-brand-blue">mandates that already exist.</span>
           </h2>
           <p className="font-mono text-xs text-text-secondary max-w-2xl leading-relaxed">
-            DORA became mandatory for EU financial institutions in January 2025. SOC 2 Type II requires continuous third-party risk monitoring. VendorSentinel maps every signal and report straight to these frameworks.
+            DORA became mandatory for EU financial institutions in January 2025. SOC 2 Type II requires continuous third-party risk monitoring. Vigil maps every signal and report straight to these frameworks.
           </p>
         </div>
 

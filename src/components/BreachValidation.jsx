@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function BreachValidation({ vendorData }) {
+export default function BreachValidation({ vendorData, replayMode }) {
   const [selectedSignal, setSelectedSignal] = useState(null);
   const [score, setScore] = useState(0);
 
@@ -120,21 +120,28 @@ export default function BreachValidation({ vendorData }) {
         <div className="flex flex-col space-y-2">
           <div className="flex items-center gap-2 text-brand-red uppercase tracking-widest text-[10px] font-bold">
             <span className="w-1.5 h-1.5 rounded-full bg-brand-red" />
-            ● BREACH VALIDATION · HISTORICAL PROOF
+            ● BREACH VALIDATION · DETECTION TIMELINE
           </div>
           <h2 className="font-serif italic text-3xl sm:text-4xl text-text-primary">
             The signals were <span className="text-brand-red">always there.</span> Nobody was watching.
           </h2>
           <p className="font-mono text-xs text-text-secondary max-w-2xl leading-relaxed">
-            We ran VendorSentinel against historical public web datasets for <strong>{vendorData?.vendor || 'Unknown'}</strong>. The interactive timeline below plots the chronological indicators retrieved prior to public awareness checks.
+            We ran Vigil against historical public web datasets for <strong>{vendorData?.vendor || 'Unknown'}</strong>. The interactive timeline below plots the chronological indicators retrieved prior to public awareness checks.
           </p>
         </div>
+
+        {replayMode && (
+          <div className="flex items-center gap-3 bg-brand-green/5 border border-brand-green/20 rounded-lg px-4 py-3 animate-pulse">
+            <span className="w-2 h-2 rounded-full bg-brand-green animate-ping" />
+            <span className="font-mono text-xs text-brand-green uppercase tracking-widest font-bold">Timeline Replay in Progress — Signals arriving sequentially</span>
+          </div>
+        )}
 
         {/* Timeline Visualizer card */}
         <div className="bg-bg-surface border border-white/5 rounded-xl p-8 shadow-2xl relative">
           
           <div className="flex justify-between text-[10px] text-text-tertiary uppercase tracking-widest font-mono mb-12">
-            <span>Detection Window (Signals Scraping)</span>
+            <span>Detection Window (Signal Intelligence)</span>
             <span className="text-brand-red font-semibold">Triage Threshold</span>
           </div>
 
@@ -147,7 +154,7 @@ export default function BreachValidation({ vendorData }) {
 
             {/* Labels overlay */}
             <div className="absolute -top-6 left-[35%] font-mono text-[9px] uppercase tracking-widest text-brand-green">
-              VendorSentinel Detection Zone
+              Vigil Detection Zone
             </div>
 
             <div className="absolute -top-6 right-0 font-mono text-[9px] uppercase tracking-widest text-brand-red">

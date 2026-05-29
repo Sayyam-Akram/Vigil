@@ -3,6 +3,7 @@ import { Shield } from 'lucide-react';
 
 const SECTIONS = [
   'hero',
+  'directory',
   'live-feed',
   'pipeline',
   'validation',
@@ -59,7 +60,7 @@ export default function NavBar() {
       <div className="flex items-center gap-2">
         <Shield className="w-5 h-5 text-brand-green fill-brand-green/10" />
         <span className="font-mono text-sm font-bold tracking-widest text-text-primary">
-          VENDORSENTINEL
+          VIGIL
         </span>
         <span className="font-mono text-[10px] bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-text-tertiary">
           v0.1.0
@@ -88,7 +89,7 @@ export default function NavBar() {
         {/* Pulse Badge */}
         <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-brand-green/20 bg-brand-green-dim text-[10px] text-brand-green font-bold tracking-widest uppercase">
           <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
-          SENTINEL ACTIVE
+          VIGIL ACTIVE
         </div>
 
         {/* Action Button */}
@@ -96,7 +97,7 @@ export default function NavBar() {
           onClick={handleScanClick}
           className="font-mono text-[11px] font-semibold text-brand-green border border-brand-green/40 hover:border-brand-green hover:bg-brand-green-dim px-3 py-1 rounded transition-all duration-200"
         >
-          Run Live Scan →
+          Analyze Vendor →
         </button>
       </div>
     </nav>

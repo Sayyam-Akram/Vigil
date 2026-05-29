@@ -77,7 +77,7 @@ export default function EvidenceArtifact({ vendorData }) {
           </div>
 
           <div className="flex justify-between items-center border-b border-white/10 pb-4 mb-4">
-            <span className="font-bold text-text-primary tracking-widest">VENDORSENTINEL RISK INTEL REPORT</span>
+            <span className="font-bold text-text-primary tracking-widest">VIGIL RISK INTEL REPORT</span>
             <span className="text-[9px] text-text-tertiary">v0.1.0</span>
           </div>
 
@@ -145,7 +145,7 @@ export default function EvidenceArtifact({ vendorData }) {
           <div className="flex flex-col space-y-1 text-[9px] text-text-tertiary">
             <div className="truncate">REPORT SECURE HASH: {vendorData?.report_hash || 'N/A'}</div>
             <div className="flex justify-between">
-              <span>CRYPTOGRAPHIC SIGN: ed25519 · vendorsentinel</span>
+              <span>CRYPTOGRAPHIC SIGN: ed25519 · vigil</span>
               <span>PAGES: 5</span>
             </div>
           </div>
