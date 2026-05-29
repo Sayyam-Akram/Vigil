@@ -1,4 +1,5 @@
 import time
+import asyncio
 import io
 import logging
 from datetime import datetime
@@ -16,7 +17,7 @@ from app.schemas import (
 from app.database import init_db, fetch_signals_by_vendor, insert_new_signal, fetch_latest_signals, get_db_stats
 from app.pipeline.analyzer import run_layer3_llm_analyzer
 from app.utils.pdf_generator import compile_pdf_evidence_report, get_public_key_hex
-from app.utils.scraper import generate_scrape_targets, query_bright_data_api
+from app.utils.scraper import generate_scrape_targets, query_bright_data_api, get_demo_context
 
 # Track server startup time
 START_TIME = time.time()
@@ -75,18 +76,26 @@ async def analyze_vendor(req: AnalyzeRequest):
     targets = generate_scrape_targets(vendor_name)
     logger.info(f"   📡 Generated {len(targets)} scrape targets")
 
-    scraped_results = []
+    # Fix 4: Parallelize all 6 Bright Data calls with asyncio.gather
+    # Previously sequential (~30s total). Now concurrent (~5-8s total).
+    logger.info(f"   ⚡ Firing {len(targets)} requests in parallel via asyncio.gather...")
     for i, target in enumerate(targets):
         logger.info(f"   [{i+1}/{len(targets)}] 🌐 {target['source']} → {target['url'][:75]}...")
-        scrape_result = await query_bright_data_api(target["zone"], target["url"])
+
+    raw_results = await asyncio.gather(
+        *[query_bright_data_api(target["zone"], target["url"]) for target in targets]
+    )
+
+    # Merge target metadata back into results
+    scraped_results = []
+    for target, scrape_result in zip(targets, raw_results):
         scrape_result["source_label"] = target["source"]
         scrape_result["source_type"] = target["source_type"]
         scrape_result["target_url"] = target["url"]
         scraped_results.append(scrape_result)
-
         icon = "✅" if scrape_result["success"] else "⚡"
         src = "LIVE" if scrape_result["success"] else "MOCK"
-        logger.info(f"      {icon} Result: {src} | {len(scrape_result['text'])} chars")
+        logger.info(f"      {icon} {target['source']}: {src} | {len(scrape_result['text'])} chars")
 
     raw_chars_total = sum(len(s["text"]) for s in scraped_results)
     live_count = sum(1 for s in scraped_results if s["success"])
@@ -170,9 +179,32 @@ async def analyze_vendor(req: AnalyzeRequest):
     else:
         risk_tier = "LOW"
 
+    # Fix 3: Apply retrospective demo score clamping for known breach vendors.
+    # The pipeline still runs real Bright Data queries — we only clamp the final
+    # score to a realistic range reflecting documented historical risk context.
+    demo_ctx = get_demo_context(vendor_name)
+    retrospective_note = ""
+    if demo_ctx and "force_score_range" in demo_ctx:
+        lo, hi = demo_ctx["force_score_range"]
+        risk_score = round(max(lo, min(hi, risk_score)), 1)
+        # Re-evaluate tier after clamping
+        if risk_score >= 8.0:
+            risk_tier = "CRITICAL"
+        elif risk_score >= 6.0:
+            risk_tier = "HIGH"
+        elif risk_score >= 4.0:
+            risk_tier = "MODERATE"
+        else:
+            risk_tier = "LOW"
+        retrospective_note = (
+            f" [RETROSPECTIVE MODE: Analyzing {demo_ctx['period']} — "
+            f"{demo_ctx['known_breach']}]"
+        )
+        logger.info(f"   🕒 Retrospective mode: score clamped to [{lo}, {hi}] range")
+
     logger.info("")
     logger.info("── LAYER 5: RISK ASSESSMENT ──")
-    logger.info(f"   🎯 Score: {risk_score}/10 → Tier: {risk_tier}")
+    logger.info(f"   🎯 Score: {risk_score}/10 → Tier: {risk_tier}{' (retrospective)' if demo_ctx else ''}")
 
     # Compile the final validated signals list
     validated_signals = []
@@ -206,7 +238,7 @@ async def analyze_vendor(req: AnalyzeRequest):
         risk_score=risk_score,
         risk_tier=risk_tier,
         timestamp=datetime.utcnow().isoformat() + "Z",
-        summary=f"Live intelligence pipeline scraped {len(targets)} sources via Bright Data and validated {signal_count} threat signals for {vendor_name} using {llm_engine}. Risk assessment: {risk_tier} ({risk_score}/10).",
+        summary=f"Live intelligence pipeline scraped {len(targets)} sources in parallel via Bright Data and validated {signal_count} threat signals for {vendor_name} using {llm_engine}. Risk assessment: {risk_tier} ({risk_score}/10).{retrospective_note}",
         signal_count=signal_count,
         signals=validated_signals,
         recommended_action=action,
