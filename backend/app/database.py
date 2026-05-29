@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 
 logger = logging.getLogger("vendorsentinel.database")
-DB_FILE = os.path.join(os.path.dirname(__file__), "vendorsentinel.db")
+DB_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "vendorsentinel.db")
 
 def get_db_connection():
     try:
