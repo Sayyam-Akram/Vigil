@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import API from './config/api';
 
@@ -60,9 +60,25 @@ class ErrorBoundary extends React.Component {
 export default function App() {
   const [vendorData, setVendorData] = useState(SNOWFLAKE_ANALYSIS);
   const [isLoading, setIsLoading] = useState(false);
+  const scanTimeoutRef = useRef(null);
+
+  // Safely clear timeout on component unmount to prevent memory leaks or state updates
+  useEffect(() => {
+    return () => {
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleScanVendor = async (vendorName) => {
     setIsLoading(true);
+
+    // Cancel any pending fallback timeouts to prevent race conditions on multi-clicks
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = null;
+    }
     
     // Check if configuration dictates live API parsing tethers
     if (!API.USE_MOCK) {
@@ -85,7 +101,7 @@ export default function App() {
     }
 
     // Heuristic Programmatic Scavenger Fallback Mode (1.5s simulated network delay)
-    setTimeout(() => {
+    scanTimeoutRef.current = setTimeout(() => {
       const query_lower = vendorName.toLowerCase();
       
       if (query_lower.includes('snowflake')) {
@@ -143,6 +159,7 @@ export default function App() {
       
       setIsLoading(false);
       scrollToFeedSection();
+      scanTimeoutRef.current = null;
     }, 1500);
   };
 

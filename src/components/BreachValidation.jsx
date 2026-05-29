@@ -4,6 +4,11 @@ export default function BreachValidation({ vendorData }) {
   const [selectedSignal, setSelectedSignal] = useState(null);
   const [score, setScore] = useState(0);
 
+  // Reset selected signal when vendor data changes to prevent stale data display
+  useEffect(() => {
+    setSelectedSignal(null);
+  }, [vendorData]);
+
   // Animate the risk score counter dynamically
   useEffect(() => {
     let current = 0;
