@@ -35,23 +35,23 @@ export default function BreachValidation({ vendorData, replayMode }) {
   // Sort signals chronologically by detected_at
   const sortedSignals = [...signals].sort((a, b) => new Date(a.detected_at) - new Date(b.detected_at));
   
-  // Take up to 5 representative items for the timeline visualization
-  const timelineSignals = sortedSignals.slice(0, 5).map(s => ({
-    date: s.detected_relative ? s.detected_relative.split(' before')[0].toUpperCase() : '12 DAYS AGO',
+  // Map ALL threat signals to timeline dots dynamically
+  const timelineSignals = sortedSignals.map((s, idx) => ({
+    date: s.detected_relative ? s.detected_relative.replace(' before disclosure', '').replace(' ago', '').toUpperCase() : `SIGNAL #${idx + 1}`,
     id: s.id,
     sev: s.severity,
     title: s.title
   }));
 
-  // Append disclosure event at the end
+  // Append a distinct, separate public disclosure node at the very end of the rail
   if (timelineSignals.length > 0) {
-    const isOkta = vendorData?.vendor === "Okta";
-    timelineSignals[timelineSignals.length - 1] = {
+    const isOkta = vendorData?.vendor?.toLowerCase().includes("okta");
+    timelineSignals.push({
       date: isOkta ? 'OCT 20' : 'JUN 2',
       id: 'sig_disclosure_node',
       sev: 'disclosure',
-      title: 'PUBLIC DISCLOSURE BREACH'
-    };
+      title: 'PUBLIC BREACH DISCLOSURE'
+    });
   }
 
   const getDotColor = (sev) => {

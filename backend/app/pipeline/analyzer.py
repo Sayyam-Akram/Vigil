@@ -174,38 +174,54 @@ def run_local_programmatic_mock(vendor: str, text: str, heuristics: Dict[str, An
     """
     High-fidelity programmatic generator mimicking structured JSON LLM responses
     so the dashboard works perfectly with zero credentials.
-
-    Fix 2: Now also returns risk_indicators_found to match the enriched LLM schema.
-    Fix 3: Boost confidence for known demo vendors where breach context is available.
     """
     sig_type = heuristics["signal_type"]
     severity = heuristics["severity"]
     confidence = heuristics["confidence"]
 
-    # Fix 3: Boost confidence for known breach vendors (contextually justified)
+    # Boost confidence for known breach vendors (contextually justified)
     demo_ctx = get_demo_context(vendor)
     if demo_ctx:
         confidence = min(98, confidence + 15)
 
-    # Context-aware summary generation based on signal types
-    if sig_type == "credential_leak":
-        summary = f"Plaintext internal administrator credentials associated with {vendor} were discovered on a public paste dump container. Security analysts confirm key data credentials match current internal patterns."
-        risk_indicators = ["credential dump", f"admin@{vendor.lower()}.com", "plaintext password", "staging endpoint exposed"]
-    elif sig_type == "github_exposure":
-        summary = f"An exposed repository for {vendor}-affiliated dev assets was flagged via GitHub Code Search API containing active programmatic secret keys and API tokens committed to public repositories."
-        risk_indicators = ["API_KEY exposed", "password in commit", "hardcoded secret", "public repository leak"]
-    elif sig_type == "regulatory_violation":
-        summary = f"Legal audits flag potential compliance filing language deviations highlighting active cybersecurity incident investigations for {vendor}. Filings verify ongoing secondary boundary tethers assessment."
-        risk_indicators = ["ongoing investigation", "anomalous access patterns", "third-party forensic specialists", "material cybersecurity incident"]
-    elif sig_type == "executive_departure":
-        summary = f"Key operational leaders within {vendor}'s security infrastructure updated roles to represent departures. Sudden vacancy drifts target essential boundary control points."
-        risk_indicators = ["security executive departure", "CISO resignation", "head of security left", "emergency security hire"]
-    elif sig_type == "security_job_spike":
-        summary = f"Recruitment volumes targeting high-security incident responders and network analysts at {vendor} spiked 4x above baseline. Job targets specify emergency staging mitigation focus."
-        risk_indicators = ["incident response engineer URGENT", "immediate start required", "4x above baseline", "active threat investigation"]
-    elif sig_type == "shadow_it":
-        summary = f"HaveIBeenPwned confirms documented breach records for {vendor}'s domain. Exposed data classes include authentication tokens and session credentials from the verified incident."
-        risk_indicators = ["verified breach", "authentication tokens exposed", "session cookies compromised", "HaveIBeenPwned confirmed"]
+    text_lower = text.lower()
+
+    # Context-aware summary and risk indicators generation based on input text keywords
+    if "dump" in text_lower or "bcrypt" in text_lower or "email_list" in text_lower:
+        summary = f"Plaintext corporate credential dumps with active passwords and administrative configurations associated with {vendor} were discovered on a public paste site."
+        risk_indicators = ["credential dump", f"admin@{vendor.lower().replace(' ', '')}.com", "plaintext password", "active staging endpoint"]
+        sig_type = "credential_leak"
+        severity = "critical"
+    elif "aws_access_key" in text_lower or "github.com" in text_lower or "api.github.com" in text_lower:
+        summary = f"An exposed contractor-owned GitHub repository affiliated with {vendor} assets was flagged containing active programmatic AWS secret access keys committed to public code files."
+        risk_indicators = ["API key exposure", "AWS access key", "hardcoded secret", "public GitHub repository"]
+        sig_type = "github_exposure"
+        severity = "high"
+    elif "isverified" in text_lower or "haveibeenpwned" in text_lower or "breachdate" in text_lower:
+        summary = f"HaveIBeenPwned confirmed a verified domain breach record for {vendor}.com, exposing authentication tokens and session credentials."
+        risk_indicators = ["verified domain breach", "compromised email logs", "HaveIBeenPwned confirmed"]
+        sig_type = "shadow_it"
+        severity = "high"
+    elif "bleepingcomputer" in text_lower or "krebsonsecurity" in text_lower or "unauthorized access" in text_lower:
+        summary = f"Industry cybersecurity coverage reports verified unauthorized access into a subset of {vendor} customer environments using compromised credentials."
+        risk_indicators = ["compromised credentials", "unauthorized session hijacking", "BleepingComputer reports"]
+        sig_type = "news_mention"
+        severity = "high"
+    elif "hiring" in text_lower or "incident response" in text_lower or "posted" in text_lower:
+        summary = f"Recruitment volumes targeting emergency security incident responders and threat analysts at {vendor} spiked 4x above baseline, signaling active mitigation operations."
+        risk_indicators = ["urgent recruitment", "4x hiring spike", "incident response engineer"]
+        sig_type = "security_job_spike"
+        severity = "medium"
+    elif "10-q" in text_lower or "sec.gov" in text_lower or "item 1a" in text_lower:
+        summary = f"Official SEC quarterly filing reports outline an ongoing internal forensic investigation following anomalous access patterns in {vendor}'s staging environments."
+        risk_indicators = ["Form 10-Q disclosure", "forensic specialists engaged", "cybersecurity assessment"]
+        sig_type = "regulatory_violation"
+        severity = "medium"
+    elif "vulnerability" in text_lower or "cve-" in text_lower or "techcrunch" in text_lower:
+        summary = f"Public security advisories advise mandatory credential and API key rotations following critical authentication vulnerabilities in {vendor}-affiliated integrations."
+        risk_indicators = ["security advisory", "mandatory credential rotation", "critical vulnerability"]
+        sig_type = "news_mention"
+        severity = "high"
     else:
         summary = f"Intelligence monitoring flagged active public web signals mentioning {vendor} in relation to potential security drifts. Verification processes suggest immediate auditing."
         risk_indicators = ["security incident mentioned", "unauthorized access", "customers affected"]

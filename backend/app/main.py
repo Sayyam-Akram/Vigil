@@ -129,6 +129,37 @@ async def analyze_vendor(req: AnalyzeRequest):
             continue
 
         # Build signal record
+        # Fix: For known retrospective vendors, generate progressive dates and realistic offsets
+        import datetime as dt_mod
+        sig_date = datetime.utcnow()
+        rel_time = "Just now"
+        
+        if demo_ctx:
+            # Shift timestamps progressively back so they sort chronologically in the timeline
+            sig_date = datetime.utcnow() - dt_mod.timedelta(days=(10 - i) * 5)
+            
+            v_lower = vendor_name.lower().strip()
+            if v_lower == "snowflake":
+                offsets = [
+                    "49 days before disclosure",
+                    "45 days before disclosure",
+                    "35 days before disclosure",
+                    "21 days before disclosure",
+                    "14 days before disclosure",
+                    "10 days before disclosure"
+                ]
+                rel_time = offsets[i % len(offsets)]
+            elif v_lower == "okta":
+                offsets = [
+                    "12 days before disclosure",
+                    "8 days before disclosure",
+                    "6 days before disclosure",
+                    "4 days before disclosure",
+                    "2 days before disclosure",
+                    "1 day before disclosure"
+                ]
+                rel_time = offsets[i % len(offsets)]
+
         signal = {
             "id": f"sig_{vendor_name.lower().replace(' ', '_')}_{int(time.time())}_{i}",
             "vendor": vendor_name,
@@ -138,8 +169,8 @@ async def analyze_vendor(req: AnalyzeRequest):
             "source": source_label,
             "source_url": scrape.get("target_url"),
             "detail": llm_result.get("summary", "Automated analysis pending."),
-            "detected_at": datetime.utcnow().isoformat() + "Z",
-            "detected_relative": "Just now",
+            "detected_at": sig_date.isoformat() + "Z",
+            "detected_relative": rel_time,
             "confidence": llm_result.get("confidence", 75),
             "raw_signal": text[:300],
             "action": (
@@ -368,56 +399,96 @@ async def fetch_live_signals_feed():
             action=action_val
         ))
 
-    # Fallback to rich, stylized mock records if the DB has no entries
-    if not signals_list:
-        mock_signals = [
-            LiveSignalItem(
-                id="sig_live_001",
-                vendor="Snowflake",
-                type="CREDENTIAL_LEAK",
-                severity="CRITICAL",
-                source="Paste site monitoring",
-                detected_relative="2m ago",
-                action="ALERT_SENT"
-            ),
-            LiveSignalItem(
-                id="sig_live_002",
-                vendor="Okta",
-                type="PERSONNEL",
-                severity="HIGH",
-                source="LinkedIn signals",
-                detected_relative="4m ago",
-                action="FLAGGED"
-            ),
-            LiveSignalItem(
-                id="sig_live_003",
-                vendor="Stripe",
-                type="JOB_SIGNAL",
-                severity="MEDIUM",
-                source="Job boards",
-                detected_relative="6m ago",
-                action="FLAGGED"
-            ),
-            LiveSignalItem(
-                id="sig_live_004",
-                vendor="GitHub",
-                type="NEWS",
-                severity="MEDIUM",
-                source="SERP / News",
-                detected_relative="8m ago",
-                action="LOGGED"
-            ),
-            LiveSignalItem(
-                id="sig_live_005",
-                vendor="Twilio",
-                type="REGULATORY",
-                severity="HIGH",
-                source="SEC EDGAR",
-                detected_relative="10m ago",
-                action="ALERT_SENT"
-            )
-        ]
-        signals_list = mock_signals
+    # Diverse global monitored ticker data to keep feed realistic and contextualized!
+    diverse_simulated = [
+        LiveSignalItem(
+            id="sig_diverse_001",
+            vendor="Elastic",
+            type="REGULATORY",
+            severity="MEDIUM",
+            source="SEC EDGAR",
+            detected_relative="1m ago",
+            action="LOGGED"
+        ),
+        LiveSignalItem(
+            id="sig_diverse_002",
+            vendor="Fastly",
+            type="PERSONNEL",
+            severity="MEDIUM",
+            source="LinkedIn signals",
+            detected_relative="3m ago",
+            action="MONITORING"
+        ),
+        LiveSignalItem(
+            id="sig_diverse_003",
+            vendor="Sentry",
+            type="GITHUB",
+            severity="HIGH",
+            source="GitHub Public Scan",
+            detected_relative="5m ago",
+            action="FLAGGED"
+        ),
+        LiveSignalItem(
+            id="sig_diverse_004",
+            vendor="Stripe",
+            type="JOB_SIGNAL",
+            severity="LOW",
+            source="Job boards",
+            detected_relative="7m ago",
+            action="LOGGED"
+        ),
+        LiveSignalItem(
+            id="sig_diverse_005",
+            vendor="Twilio",
+            type="CREDENTIAL_LEAK",
+            severity="CRITICAL",
+            source="Paste site monitoring",
+            detected_relative="9m ago",
+            action="ALERT_SENT"
+        ),
+        LiveSignalItem(
+            id="sig_diverse_006",
+            vendor="Vercel",
+            type="NEWS",
+            severity="LOW",
+            source="SERP / News",
+            detected_relative="12m ago",
+            action="LOGGED"
+        ),
+        LiveSignalItem(
+            id="sig_diverse_007",
+            vendor="Datadog",
+            type="SHADOW_IT",
+            severity="HIGH",
+            source="HaveIBeenPwned Breach Database",
+            detected_relative="15m ago",
+            action="ALERT_SENT"
+        )
+    ]
+
+    # Dynamic blending: Interleave real scanned signals with global ticker stream
+    blended_signals = []
+    db_idx = 0
+    div_idx = 0
+    
+    while len(blended_signals) < 12:
+        if db_idx < len(signals_list) and (len(blended_signals) % 2 == 0 or div_idx >= len(diverse_simulated)):
+            sig = signals_list[db_idx]
+            # Avoid duplicate signal IDs in the visual feed
+            if sig.id not in [s.id for s in blended_signals]:
+                blended_signals.append(sig)
+            db_idx += 1
+        elif div_idx < len(diverse_simulated):
+            blended_signals.append(diverse_simulated[div_idx])
+            div_idx += 1
+        else:
+            break
+
+    # If no DB records exist yet, fall back to pure diverse simulated stream
+    if not blended_signals:
+        blended_signals = diverse_simulated
+
+    final_signals_list = blended_signals
 
     # Pull live system indicators directly from SQLite
     total_db, critical_db = get_db_stats()
@@ -428,7 +499,7 @@ async def fetch_live_signals_feed():
     alerts_sent = critical_db if total_db > 0 else 8
 
     return LiveSignalFeedResponse(
-        signals=signals_list,
+        signals=final_signals_list,
         updated_at=datetime.utcnow().isoformat() + "Z",
         stats=LiveFeedStats(
             raw_last_hour=raw_last_hour,
