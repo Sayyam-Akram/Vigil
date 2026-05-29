@@ -1,0 +1,142 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary:     #08090d;    /* near black, slightly blue-tinted */
+  --bg-surface:     #0f1117;    /* card/panel background */
+  --bg-elevated:    #161820;    /* hover states, elevated panels */
+  --border:         rgba(255,255,255,0.06);
+  --border-active:  rgba(255,255,255,0.12);
+
+  --green:          #00ff9d;    /* LIVE / safe / active */
+  --green-dim:      rgba(0,255,157,0.08);
+  --red:            #ff3d3d;    /* CRITICAL risk */
+  --red-dim:        rgba(255,61,61,0.08);
+  --orange:         #ff6b00;    /* HIGH risk */
+  --orange-dim:     rgba(255,107,0,0.08);
+  --yellow:         #ffc700;    /* MEDIUM risk */
+  --yellow-dim:     rgba(255,199,0,0.08);
+  --blue:           #4d9eff;    /* informational / Phase 2 */
+  --white-primary:  rgba(255,255,255,0.90);
+  --white-secondary:rgba(255,255,255,0.45);
+  --white-tertiary: rgba(255,255,255,0.18);
+  --white-muted:    rgba(255,255,255,0.08);
+}
+
+* {
+  box-sizing: border-box;
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--white-primary);
+  font-family: 'JetBrains Mono', monospace;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Animated Noise/Grain Background Texture Overlay */
+body::before {
+  content: "";
+  position: fixed;
+  top: -10rem;
+  left: -10rem;
+  width: calc(100vw + 20rem);
+  height: calc(100vh + 20rem);
+  z-index: 1;
+  opacity: 0.02;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* Custom terminal scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--green);
+}
+
+/* Custom layout utility helper styles */
+.terminal-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.radar-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.radar-fade-out {
+  animation: fadeOut 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.5); }
+}
+
+/* Custom row background flash keyframe */
+@keyframes row-flash {
+  0% {
+    background-color: rgba(0, 255, 157, 0.25);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-row-flash {
+  animation: row-flash 1.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+/* SVG dashed line animation for pipeline */
+.animated-connector {
+  stroke-dasharray: 8 4;
+  animation: flow-connector 15s linear infinite;
+}
+
+@keyframes flow-connector {
+  from {
+    stroke-dashoffset: 200;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Simple fade-in utility for modals/toasts */
+@keyframes simple-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fadeIn {
+  animation: simple-fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
