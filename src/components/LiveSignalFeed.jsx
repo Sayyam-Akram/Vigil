@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import API from '../config/api';
 import { LIVE_SIGNALS_FEED } from '../data/mockData';
 
 export default function LiveSignalFeed() {
@@ -7,8 +9,62 @@ export default function LiveSignalFeed() {
   const [newRowId, setNewRowId] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState('');
+  const [stats, setStats] = useState({
+    raw_last_hour: 847,
+    survived_filter: 23,
+    survived_filter_pct: '2.7%',
+    alert_window: '<2 hrs'
+  });
   
-  // Custom scan trigger listener
+  // ── LIVE BACKEND POLLING ───────────────────────────────────────────────
+  useEffect(() => {
+    if (API.USE_MOCK) return;
+
+    const fetchLiveFeed = async () => {
+      try {
+        const res = await axios.get(API.ENDPOINTS.LIVE_SIGNALS);
+        if (res.data && res.data.signals) {
+          const backendSignals = res.data.signals.map(s => ({
+            id: s.id,
+            vendor: s.vendor,
+            type: s.type.toLowerCase(),
+            severity: s.severity.toLowerCase(),
+            source: s.source,
+            detected_relative: s.detected_relative,
+            action: s.action
+          }));
+
+          // Trigger flash if there is a new signal at the top
+          setSignals(prev => {
+            if (prev.length > 0 && backendSignals.length > 0 && prev[0].id !== backendSignals[0].id) {
+              setNewRowId(backendSignals[0].id);
+            }
+            return backendSignals;
+          });
+          
+          if (res.data.stats) {
+            const raw = res.data.stats.raw_last_hour;
+            const survived = res.data.stats.survived_filter;
+            const pct = raw > 0 ? `${((survived / raw) * 100).toFixed(1)}%` : '2.7%';
+            setStats({
+              raw_last_hour: raw,
+              survived_filter: survived,
+              survived_filter_pct: pct,
+              alert_window: survived > 10 ? '<30 mins' : '<2 hrs'
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Error fetching live signals from backend:', err);
+      }
+    };
+
+    fetchLiveFeed();
+    const interval = setInterval(fetchLiveFeed, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── CUSTOM SCAN TRIGGER LISTENER ───────────────────────────────────────
   useEffect(() => {
     const timeouts = [];
     const handleMockScan = () => {
@@ -20,34 +76,66 @@ export default function LiveSignalFeed() {
       }, 700));
 
       timeouts.push(setTimeout(() => {
-        setScanStatus('Running content filtration & Groq Llama 3.1 LLM pipeline...');
+        setScanStatus('Running content filtration & Groq Llama 3.3 LLM pipeline...');
       }, 1400));
 
-      timeouts.push(setTimeout(() => {
-        // Complete scan: add fresh critical signals at the top
-        const freshSignals = [
-          {
-            id: `sig_scan_${Date.now()}_1`,
-            vendor: 'Snowflake',
-            type: 'credential_leak',
-            severity: 'critical',
-            source: 'Paste site monitoring',
-            detected_relative: '10s ago',
-            action: 'ALERT_SENT'
-          },
-          {
-            id: `sig_scan_${Date.now()}_2`,
-            vendor: 'Okta',
-            type: 'github',
-            severity: 'high',
-            source: 'GitHub Public Scan',
-            detected_relative: '23s ago',
-            action: 'ALERT_SENT'
-          },
-          ...LIVE_SIGNALS_FEED.slice(0, 3)
-        ];
-        setSignals(freshSignals);
-        setNewRowId(freshSignals[0].id);
+      timeouts.push(setTimeout(async () => {
+        if (!API.USE_MOCK) {
+          try {
+            const res = await axios.get(API.ENDPOINTS.LIVE_SIGNALS);
+            if (res.data && res.data.signals) {
+              const backendSignals = res.data.signals.map(s => ({
+                id: s.id,
+                vendor: s.vendor,
+                type: s.type.toLowerCase(),
+                severity: s.severity.toLowerCase(),
+                source: s.source,
+                detected_relative: s.detected_relative,
+                action: s.action
+              }));
+              setSignals(backendSignals);
+              if (res.data.stats) {
+                const raw = res.data.stats.raw_last_hour;
+                const survived = res.data.stats.survived_filter;
+                const pct = raw > 0 ? `${((survived / raw) * 100).toFixed(1)}%` : '2.7%';
+                setStats({
+                  raw_last_hour: raw,
+                  survived_filter: survived,
+                  survived_filter_pct: pct,
+                  alert_window: survived > 10 ? '<30 mins' : '<2 hrs'
+                });
+              }
+              setNewRowId(backendSignals[0]?.id || null);
+            }
+          } catch (err) {
+            console.warn('Error fetching live signals during scan:', err);
+          }
+        } else {
+          // Complete scan: add fresh critical signals at the top
+          const freshSignals = [
+            {
+              id: `sig_scan_${Date.now()}_1`,
+              vendor: 'Snowflake',
+              type: 'credential_leak',
+              severity: 'critical',
+              source: 'Paste site monitoring',
+              detected_relative: '10s ago',
+              action: 'ALERT_SENT'
+            },
+            {
+              id: `sig_scan_${Date.now()}_2`,
+              vendor: 'Okta',
+              type: 'github',
+              severity: 'high',
+              source: 'GitHub Public Scan',
+              detected_relative: '23s ago',
+              action: 'ALERT_SENT'
+            },
+            ...LIVE_SIGNALS_FEED.slice(0, 3)
+          ];
+          setSignals(freshSignals);
+          setNewRowId(freshSignals[0].id);
+        }
         setIsScanning(false);
       }, 2200));
     };
@@ -59,9 +147,9 @@ export default function LiveSignalFeed() {
     };
   }, []);
 
-  // Cycle signals every 5 seconds
+  // ── DYNAMIC MOCK CYCLE (Only active when USE_MOCK is true) ─────────────
   useEffect(() => {
-    if (isScanning) return;
+    if (!API.USE_MOCK || isScanning) return;
 
     const interval = setInterval(() => {
       if (unseenSignals.length === 0) {
@@ -72,7 +160,6 @@ export default function LiveSignalFeed() {
 
       const nextSignal = { ...unseenSignals[0] };
       const currentTime = new Date();
-      // Format current timestamp to match TIME format
       const formattedTime = currentTime.toTimeString().split(' ')[0];
       
       const newSignal = {
@@ -122,9 +209,16 @@ export default function LiveSignalFeed() {
         
         {/* Identity Section Header */}
         <div className="flex flex-col space-y-2">
-          <div className="flex items-center gap-2 text-brand-green uppercase tracking-widest text-[10px] font-bold">
-            <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
-            ● SIGNAL FEED · LIVE TAIL · UPDATES EVERY 5s
+          <div className="flex items-center gap-4 text-brand-green uppercase tracking-widest text-[10px] font-bold flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
+              ● SIGNAL FEED · LIVE TAIL · UPDATES EVERY 5s
+            </div>
+            {!API.USE_MOCK && (
+              <div className="bg-brand-green/10 border border-brand-green/20 text-brand-green px-2.5 py-0.5 rounded-full text-[9px] font-mono tracking-widest">
+                CONNECTED TO SQLITE DATABASE
+              </div>
+            )}
           </div>
           <h2 className="font-serif italic text-3xl sm:text-4xl text-text-primary">
             Live intelligence. <span className="font-mono not-italic text-2xl font-normal text-text-secondary">Signals as they surface.</span>
@@ -185,7 +279,7 @@ export default function LiveSignalFeed() {
         {/* Stats counter row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
           <div className="bg-bg-surface border border-white/5 rounded-xl p-6 flex flex-col space-y-1">
-            <span className="font-mono text-3xl font-bold text-text-primary">847</span>
+            <span className="font-mono text-3xl font-bold text-text-primary">{stats.raw_last_hour}</span>
             <span className="font-mono text-[10px] text-text-tertiary uppercase tracking-wider">
               Raw signals processed <span className="text-text-muted">(last hour)</span>
             </span>
@@ -193,15 +287,15 @@ export default function LiveSignalFeed() {
 
           <div className="bg-bg-surface border border-white/5 rounded-xl p-6 flex flex-col space-y-1">
             <span className="font-mono text-3xl font-bold text-brand-green">
-              23 <span className="text-sm text-text-secondary font-normal font-mono">(2.7%)</span>
+              {stats.survived_filter} <span className="text-sm text-text-secondary font-normal font-mono">({stats.survived_filter_pct})</span>
             </span>
             <span className="font-mono text-[10px] text-text-tertiary uppercase tracking-wider">
-              Survived layered filter <span className="text-brand-green font-bold">2.7% validation</span>
+              Survived layered filter <span className="text-brand-green font-bold">{stats.survived_filter_pct} validation</span>
             </span>
           </div>
 
           <div className="bg-bg-surface border border-white/5 rounded-xl p-6 flex flex-col space-y-1">
-            <span className="font-mono text-3xl font-bold text-brand-blue">&lt;2 hrs</span>
+            <span className="font-mono text-3xl font-bold text-brand-blue">{stats.alert_window}</span>
             <span className="font-mono text-[10px] text-text-tertiary uppercase tracking-wider">
               Alert delivery window <span className="text-brand-blue font-bold">DORA compliant</span>
             </span>

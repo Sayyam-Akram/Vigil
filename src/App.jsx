@@ -87,32 +87,93 @@ export default function App() {
   // ── TIMELINE REPLAY ENGINE ──────────────────────────────────────────────
   // The hero demo feature. Feeds signals one-by-one with delays, making the
   // score climb progressively from LOW → MODERATE → HIGH → CRITICAL.
-  // This shows judges how signal ACCUMULATION over time detects breaches.
-  const handleReplayVendor = useCallback((vendorName) => {
+  // When API.USE_MOCK is false, it uses live backend signals returned by uvicorn.
+  const handleReplayVendor = useCallback(async (vendorName) => {
     // Cancel any pending operations
     if (scanTimeoutRef.current) { clearTimeout(scanTimeoutRef.current); scanTimeoutRef.current = null; }
     replayTimersRef.current.forEach(t => clearTimeout(t));
     replayTimersRef.current = [];
 
-    const query_lower = vendorName.toLowerCase();
-    let sourceAnalysis;
-    if (query_lower.includes('snowflake')) {
-      sourceAnalysis = SNOWFLAKE_ANALYSIS;
-    } else if (query_lower.includes('okta')) {
-      sourceAnalysis = OKTA_ANALYSIS;
-    } else {
-      // Unknown vendors don't get replay — fall through to normal scan
-      handleScanVendor(vendorName);
-      return;
+    setIsLoading(true);
+    setReplayMode(true);
+
+    let sourceAnalysis = null;
+
+    // Live API mode: fetch real-time intelligence from backend
+    if (!API.USE_MOCK) {
+      try {
+        const response = await axios.post(API.ENDPOINTS.ANALYZE, {
+          vendor: vendorName
+        }, {
+          timeout: 30000
+        });
+        
+        if (response.data && response.data.signals && response.data.signals.length > 0) {
+          sourceAnalysis = response.data;
+        }
+      } catch (err) {
+        console.warn('Backend live API failed or offline, using mock fallback:', err);
+      }
+    }
+
+    // Fallback to local mock seed data if mock mode is active or backend fetch failed
+    if (!sourceAnalysis) {
+      const query_lower = vendorName.toLowerCase();
+      if (query_lower.includes('snowflake')) {
+        sourceAnalysis = SNOWFLAKE_ANALYSIS;
+      } else if (query_lower.includes('okta')) {
+        sourceAnalysis = OKTA_ANALYSIS;
+      } else {
+        // Unknown vendor scan — score CAPPED at 3.0 max (single scan can't confirm a breach)
+        const simulatedScore = parseFloat((1.5 + Math.random() * 1.5).toFixed(1));
+        const simulatedTier = simulatedScore >= 4.0 ? 'MODERATE' : 'LOW';
+        
+        sourceAnalysis = {
+          vendor: vendorName,
+          risk_score: simulatedScore,
+          risk_tier: simulatedTier,
+          timestamp: new Date().toISOString(),
+          summary: `Initial scan complete for ${vendorName}. continuous monitoring required — a single scan cannot validate a breach pattern.`,
+          signal_count: 2,
+          signals: [
+            {
+              id: `sig_gen_${Date.now()}_1`,
+              type: "news",
+              severity: "low",
+              title: `Public mentions of ${vendorName} in security contexts`,
+              source: "SERP / News via Bright Data",
+              source_url: null,
+              detail: `Standard security discussion mentions found for ${vendorName}. No confirmed threat indicators at this time.`,
+              detected_at: new Date().toISOString(),
+              detected_relative: "12 days before",
+              confidence: 45,
+              raw_signal: `search_result: "${vendorName} security" — general industry mentions only`
+            },
+            {
+              id: `sig_gen_${Date.now()}_2`,
+              type: "github",
+              severity: "low",
+              title: "Public repository keyword scan",
+              source: "GitHub Code Search API",
+              source_url: null,
+              detail: "No high-confidence exposed secrets found in initial scan. Further monitoring recommended.",
+              detected_at: new Date(Date.now() + 1000).toISOString(),
+              detected_relative: "10 days before",
+              confidence: 35,
+              raw_signal: `github_api: q=${vendorName.toLowerCase()}+password — 0 critical matches`
+            }
+          ],
+          recommended_action: `No immediate action required. Add ${vendorName} to continuous monitoring.`,
+          compliance_refs: ["DORA Art.28", "SOC 2 CC9.2"],
+          report_hash: `sha256:${generateMockHash(vendorName + Date.now())}`
+        };
+      }
     }
 
     // Sort signals chronologically for the replay timeline
     const allSignals = [...sourceAnalysis.signals].sort(
       (a, b) => new Date(a.detected_at) - new Date(b.detected_at)
     );
-
-    setIsLoading(true);
-    setReplayMode(true);
 
     // Initialize with empty state — score starts at 0
     setVendorData({
@@ -142,8 +203,8 @@ export default function App() {
             ...prev,
             signals: updatedSignals,
             signal_count: updatedSignals.length,
-            risk_score: score,
-            risk_tier: tier,
+            risk_score: isLast ? sourceAnalysis.risk_score : score,
+            risk_tier: isLast ? sourceAnalysis.risk_tier : tier,
             summary: isLast
               ? sourceAnalysis.summary
               : `Signal ${index + 1}/${allSignals.length} detected. Risk score: ${score}/10 (${tier}). Monitoring continues...`,
@@ -167,99 +228,9 @@ export default function App() {
   }, []);
 
   // ── STANDARD SCAN HANDLER ──────────────────────────────────────────────
+  // Delegates directly to handleReplayVendor to run the sequential animation for both mock and live data
   const handleScanVendor = async (vendorName) => {
-    // Cancel any active replay
-    replayTimersRef.current.forEach(t => clearTimeout(t));
-    replayTimersRef.current = [];
-    setReplayMode(false);
-
-    setIsLoading(true);
-
-    // Cancel any pending fallback timeouts
-    if (scanTimeoutRef.current) {
-      clearTimeout(scanTimeoutRef.current);
-      scanTimeoutRef.current = null;
-    }
-    
-    // Live API mode
-    if (!API.USE_MOCK) {
-      try {
-        const response = await axios.post(API.ENDPOINTS.ANALYZE, {
-          vendor: vendorName
-        }, {
-          timeout: 30000
-        });
-        
-        if (response.data) {
-          setVendorData(response.data);
-          setIsLoading(false);
-          scrollToFeedSection();
-          return;
-        }
-      } catch (err) {
-        console.warn('Backend offline, activating mock fallback:', err);
-      }
-    }
-
-    // Mock fallback mode (1.5s simulated delay)
-    scanTimeoutRef.current = setTimeout(() => {
-      const query_lower = vendorName.toLowerCase();
-      
-      if (query_lower.includes('snowflake')) {
-        setVendorData(SNOWFLAKE_ANALYSIS);
-      } else if (query_lower.includes('okta')) {
-        setVendorData(OKTA_ANALYSIS);
-      } else {
-        // Unknown vendor scan — score CAPPED at 4.5 max (single scan can't confirm a breach)
-        const simulatedScore = parseFloat((1.5 + Math.random() * 3.0).toFixed(1));
-        const simulatedTier = simulatedScore >= 4.0 ? 'MODERATE' : 'LOW';
-        
-        const generatedResult = {
-          vendor: vendorName,
-          risk_score: simulatedScore,
-          risk_tier: simulatedTier,
-          timestamp: new Date().toISOString(),
-          summary: `Initial scan complete for ${vendorName}. ${simulatedScore >= 3.0 ? 'Minor signals detected across public sources.' : 'No significant threat indicators found.'} Continuous monitoring required for threat confirmation — a single scan cannot validate a breach pattern.`,
-          signal_count: 2,
-          signals: [
-            {
-              id: `sig_gen_${Date.now()}_1`,
-              type: "news",
-              severity: "low",
-              title: `Public mentions of ${vendorName} in security contexts`,
-              source: "SERP / News via Bright Data",
-              source_url: null,
-              detail: `Standard security discussion mentions found for ${vendorName}. No confirmed threat indicators at this time.`,
-              detected_at: new Date().toISOString(),
-              detected_relative: "Just now",
-              confidence: 45,
-              raw_signal: `search_result: "${vendorName} security" — general industry mentions only`
-            },
-            {
-              id: `sig_gen_${Date.now()}_2`,
-              type: "github",
-              severity: "low",
-              title: "Public repository keyword scan",
-              source: "GitHub Code Search API",
-              source_url: null,
-              detail: "No high-confidence exposed secrets found in initial scan. Further monitoring recommended.",
-              detected_at: new Date().toISOString(),
-              detected_relative: "Just now",
-              confidence: 35,
-              raw_signal: `github_api: q=${vendorName.toLowerCase()}+password — 0 critical matches`
-            }
-          ],
-          recommended_action: `No immediate action required. Add ${vendorName} to continuous monitoring for ongoing signal accumulation analysis.`,
-          compliance_refs: ["DORA Art.28", "SOC 2 CC9.2"],
-          report_hash: `sha256:${generateMockHash(vendorName + Date.now())}`
-        };
-        setVendorData(generatedResult);
-      }
-      
-      setIsLoading(false);
-      scrollToFeedSection();
-      scanTimeoutRef.current = null;
-    }, 1500);
+    handleReplayVendor(vendorName);
   };
 
   const scrollToFeedSection = () => {
