@@ -53,3 +53,5 @@ backend/.env
 backend/keys/
 *.pem
 *.key
+
+.vercel
