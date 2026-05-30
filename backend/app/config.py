@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     BRIGHT_DATA_API_KEY: str = ""
     BRIGHT_DATA_SERP_ZONE: str = ""
     BRIGHT_DATA_UNLOCKER_ZONE: str = ""
+    BRIGHT_DATA_CUSTOMER_ID: str = ""
+    BRIGHT_DATA_BROWSER_ZONE: str = ""
+    BRIGHT_DATA_BROWSER_PASSWORD: str = ""
     
     GROQ_API_KEY: str = ""
     GEMINI_API_KEY: str = ""

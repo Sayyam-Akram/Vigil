@@ -4,23 +4,67 @@ import API from '../config/api';
 import { LIVE_SIGNALS_FEED } from '../data/mockData';
 
 export default function LiveSignalFeed() {
-  const [signals, setSignals] = useState(LIVE_SIGNALS_FEED.slice(0, 5));
-  const [unseenSignals, setUnseenSignals] = useState(LIVE_SIGNALS_FEED.slice(5));
+  const [signals, setSignals] = useState([]);
   const [newRowId, setNewRowId] = useState(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanStatus, setScanStatus] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(null);
   const [stats, setStats] = useState({
-    raw_last_hour: 847,
-    survived_filter: 23,
-    survived_filter_pct: '2.7%',
-    alert_window: '<2 hrs'
+    raw_last_hour: 0,
+    survived_filter: 0,
+    survived_filter_pct: '0%',
+    alert_window: '—'
   });
-  
-  // ── LIVE BACKEND POLLING ───────────────────────────────────────────────
+
+  // ── MOCK MODE CYCLE ───────────────────────────────────────────────────
+  // Only active when USE_MOCK is true — cycles through mock data
+  const [unseenSignals, setUnseenSignals] = useState(LIVE_SIGNALS_FEED.slice(5));
+
+  useEffect(() => {
+    if (API.USE_MOCK) {
+      // Initialize with mock data
+      setSignals(LIVE_SIGNALS_FEED.slice(0, 5));
+      setStats({
+        raw_last_hour: 847,
+        survived_filter: 23,
+        survived_filter_pct: '2.7%',
+        alert_window: '<2 hrs'
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!API.USE_MOCK) return;
+
+    const interval = setInterval(() => {
+      setUnseenSignals(prev => {
+        if (prev.length === 0) return LIVE_SIGNALS_FEED;
+        
+        const nextSignal = { ...prev[0] };
+        const newSignal = {
+          ...nextSignal,
+          id: `sig_cycle_${Date.now()}`,
+          detected_relative: new Date().toTimeString().split(' ')[0]
+        };
+        
+        setSignals(s => [newSignal, ...s.slice(0, 4)]);
+        setNewRowId(newSignal.id);
+        return prev.slice(1);
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── LIVE BACKEND SSE & POLLING ──────────────────────────────────────────
+  // Connects via Server-Sent Events (SSE) for instant signal delivery,
+  // falling back gracefully to periodic SQLite polling if SSE is disconnected.
   useEffect(() => {
     if (API.USE_MOCK) return;
 
-    const fetchLiveFeed = async () => {
+    let eventSource = null;
+    let pollInterval = null;
+
+    const fetchLiveFeedData = async () => {
       try {
         const res = await axios.get(API.ENDPOINTS.LIVE_SIGNALS);
         if (res.data && res.data.signals) {
@@ -34,18 +78,17 @@ export default function LiveSignalFeed() {
             action: s.action
           }));
 
-          // Trigger flash if there is a new signal at the top
           setSignals(prev => {
             if (prev.length > 0 && backendSignals.length > 0 && prev[0].id !== backendSignals[0].id) {
               setNewRowId(backendSignals[0].id);
             }
             return backendSignals;
           });
-          
+
           if (res.data.stats) {
             const raw = res.data.stats.raw_last_hour;
             const survived = res.data.stats.survived_filter;
-            const pct = raw > 0 ? `${((survived / raw) * 100).toFixed(1)}%` : '2.7%';
+            const pct = raw > 0 ? `${((survived / raw) * 100).toFixed(1)}%` : '0%';
             setStats({
               raw_last_hour: raw,
               survived_filter: survived,
@@ -53,128 +96,108 @@ export default function LiveSignalFeed() {
               alert_window: survived > 10 ? '<30 mins' : '<2 hrs'
             });
           }
+          setIsConnected(true);
+          setLastUpdate(new Date());
         }
       } catch (err) {
-        console.warn('Error fetching live signals from backend:', err);
+        console.warn('Error fetching fallback polling feed:', err);
+        setIsConnected(false);
       }
     };
 
-    fetchLiveFeed();
-    const interval = setInterval(fetchLiveFeed, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    const setupSSE = () => {
+      try {
+        eventSource = new EventSource(API.ENDPOINTS.SIGNAL_STREAM);
 
-  // ── CUSTOM SCAN TRIGGER LISTENER ───────────────────────────────────────
-  useEffect(() => {
-    const timeouts = [];
-    const handleMockScan = () => {
-      setIsScanning(true);
-      setScanStatus('Initializing Bright Data Web Scraper API nodes...');
-      
-      timeouts.push(setTimeout(() => {
-        setScanStatus('SERP & Paste sites residential proxies active...');
-      }, 700));
+        eventSource.onopen = () => {
+          setIsConnected(true);
+          setLastUpdate(new Date());
+          console.log('🔌 SSE Stream Connection established.');
+          // Stop polling if we are live on SSE
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
+          // Fetch initial state once
+          fetchLiveFeedData();
+        };
 
-      timeouts.push(setTimeout(() => {
-        setScanStatus('Running content filtration & Groq Llama 3.3 LLM pipeline...');
-      }, 1400));
-
-      timeouts.push(setTimeout(async () => {
-        if (!API.USE_MOCK) {
+        eventSource.onmessage = (event) => {
           try {
-            const res = await axios.get(API.ENDPOINTS.LIVE_SIGNALS);
-            if (res.data && res.data.signals) {
-              const backendSignals = res.data.signals.map(s => ({
-                id: s.id,
-                vendor: s.vendor,
-                type: s.type.toLowerCase(),
-                severity: s.severity.toLowerCase(),
-                source: s.source,
-                detected_relative: s.detected_relative,
-                action: s.action
-              }));
-              setSignals(backendSignals);
-              if (res.data.stats) {
-                const raw = res.data.stats.raw_last_hour;
-                const survived = res.data.stats.survived_filter;
-                const pct = raw > 0 ? `${((survived / raw) * 100).toFixed(1)}%` : '2.7%';
-                setStats({
-                  raw_last_hour: raw,
-                  survived_filter: survived,
-                  survived_filter_pct: pct,
-                  alert_window: survived > 10 ? '<30 mins' : '<2 hrs'
-                });
-              }
-              setNewRowId(backendSignals[0]?.id || null);
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'signal_detected') {
+              const newSig = data.data;
+              const formattedSig = {
+                id: newSig.id,
+                vendor: newSig.vendor,
+                type: newSig.type.toLowerCase(),
+                severity: newSig.severity.toLowerCase(),
+                source: newSig.source,
+                detected_relative: newSig.detected_relative || 'Just now',
+                action: newSig.action || 'LOGGED'
+              };
+
+              setSignals(prev => {
+                // Ensure no duplicates
+                if (prev.some(s => s.id === formattedSig.id)) return prev;
+                setNewRowId(formattedSig.id);
+                return [formattedSig, ...prev.slice(0, 14)];
+              });
+
+              setStats(prev => {
+                const newRaw = prev.raw_last_hour + 3;
+                const newSurvived = prev.survived_filter + 1;
+                return {
+                  raw_last_hour: newRaw,
+                  survived_filter: newSurvived,
+                  survived_filter_pct: `${((newSurvived / newRaw) * 100).toFixed(1)}%`,
+                  alert_window: newSurvived > 10 ? '<30 mins' : '<2 hrs'
+                };
+              });
+
+              setLastUpdate(new Date());
             }
           } catch (err) {
-            console.warn('Error fetching live signals during scan:', err);
+            console.error('Error parsing SSE event data:', err);
           }
-        } else {
-          // Complete scan: add fresh critical signals at the top
-          const freshSignals = [
-            {
-              id: `sig_scan_${Date.now()}_1`,
-              vendor: 'Snowflake',
-              type: 'credential_leak',
-              severity: 'critical',
-              source: 'Paste site monitoring',
-              detected_relative: '10s ago',
-              action: 'ALERT_SENT'
-            },
-            {
-              id: `sig_scan_${Date.now()}_2`,
-              vendor: 'Okta',
-              type: 'github',
-              severity: 'high',
-              source: 'GitHub Public Scan',
-              detected_relative: '23s ago',
-              action: 'ALERT_SENT'
-            },
-            ...LIVE_SIGNALS_FEED.slice(0, 3)
-          ];
-          setSignals(freshSignals);
-          setNewRowId(freshSignals[0].id);
-        }
-        setIsScanning(false);
-      }, 2200));
+        };
+
+        eventSource.onerror = (err) => {
+          console.warn('⚠️ SSE connection encountered error. Falling back to HTTP polling...', err);
+          setIsConnected(false);
+          if (eventSource) {
+            eventSource.close();
+          }
+          
+          // Trigger fallback polling
+          if (!pollInterval) {
+            fetchLiveFeedData();
+            pollInterval = setInterval(fetchLiveFeedData, 5000);
+          }
+        };
+      } catch (err) {
+        console.error('SSE initialization error:', err);
+        fetchLiveFeedData();
+        pollInterval = setInterval(fetchLiveFeedData, 5000);
+      }
     };
 
-    window.addEventListener('trigger-mock-scan', handleMockScan);
+    // Initialize SSE
+    setupSSE();
+
     return () => {
-      window.removeEventListener('trigger-mock-scan', handleMockScan);
-      timeouts.forEach(clearTimeout);
+      if (eventSource) eventSource.close();
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, []);
 
-  // ── DYNAMIC MOCK CYCLE (Only active when USE_MOCK is true) ─────────────
+  // Clear new row flash after animation
   useEffect(() => {
-    if (!API.USE_MOCK || isScanning) return;
-
-    const interval = setInterval(() => {
-      if (unseenSignals.length === 0) {
-        // Recycle mock data
-        setUnseenSignals(LIVE_SIGNALS_FEED);
-        return;
-      }
-
-      const nextSignal = { ...unseenSignals[0] };
-      const currentTime = new Date();
-      const formattedTime = currentTime.toTimeString().split(' ')[0];
-      
-      const newSignal = {
-        ...nextSignal,
-        id: `sig_cycle_${Date.now()}`,
-        detected_relative: formattedTime
-      };
-
-      setSignals(prev => [newSignal, ...prev.slice(0, 4)]);
-      setNewRowId(newSignal.id);
-      setUnseenSignals(prev => prev.slice(1));
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [unseenSignals, isScanning]);
+    if (!newRowId) return;
+    const timer = setTimeout(() => setNewRowId(null), 1500);
+    return () => clearTimeout(timer);
+  }, [newRowId]);
 
   const getSeverityStyle = (sev) => {
     switch (sev.toLowerCase()) {
@@ -203,6 +226,8 @@ export default function LiveSignalFeed() {
     }
   };
 
+  const hasSignals = signals.length > 0;
+
   return (
     <section id="live-feed" className="max-w-7xl mx-auto w-full px-6 py-20 border-b border-white/5">
       <div className="flex flex-col space-y-6">
@@ -211,12 +236,22 @@ export default function LiveSignalFeed() {
         <div className="flex flex-col space-y-2">
           <div className="flex items-center gap-4 text-brand-green uppercase tracking-widest text-[10px] font-bold flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
+              <span className={`w-1.5 h-1.5 rounded-full ${hasSignals ? 'bg-brand-green animate-pulse' : 'bg-white/30'}`} />
               ● SIGNAL FEED · LIVE TAIL · UPDATES EVERY 5s
             </div>
-            {!API.USE_MOCK && (
-              <div className="bg-brand-green/10 border border-brand-green/20 text-brand-green px-2.5 py-0.5 rounded-full text-[9px] font-mono tracking-widest">
-                CONNECTED TO SQLITE DATABASE
+            
+            {/* Data Source Indicator */}
+            {!API.USE_MOCK ? (
+              <div className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono tracking-widest border ${
+                isConnected 
+                  ? 'bg-brand-green/10 border-brand-green/20 text-brand-green' 
+                  : 'bg-brand-red/10 border-brand-red/20 text-brand-red'
+              }`}>
+                {isConnected ? '● LIVE — SQLITE DATABASE' : '● DISCONNECTED — WAITING FOR BACKEND'}
+              </div>
+            ) : (
+              <div className="bg-brand-yellow/10 border border-brand-yellow/20 text-brand-yellow px-2.5 py-0.5 rounded-full text-[9px] font-mono tracking-widest">
+                DEMO MODE — SIMULATED DATA
               </div>
             )}
           </div>
@@ -225,13 +260,19 @@ export default function LiveSignalFeed() {
           </h2>
         </div>
 
-        {/* Live scanner interactive overlays */}
-        {isScanning ? (
-          <div className="w-full bg-bg-surface border border-brand-green/30 rounded-xl p-12 flex flex-col items-center justify-center space-y-4">
-            <div className="w-8 h-8 rounded-full border-2 border-brand-green/20 border-t-brand-green animate-spin" />
-            <div className="font-mono text-xs text-brand-green uppercase tracking-widest animate-pulse">
-              {scanStatus}
+        {/* Empty state when no signals */}
+        {!hasSignals ? (
+          <div className="w-full bg-bg-surface border border-white/10 rounded-xl p-16 flex flex-col items-center justify-center space-y-4 text-center">
+            <div className="text-4xl opacity-30">📡</div>
+            <div className="font-mono text-sm text-text-secondary">
+              {!API.USE_MOCK ? 'Waiting for backend signals...' : 'Initializing signal feed...'}
             </div>
+            <p className="font-mono text-[11px] text-text-tertiary max-w-md leading-relaxed">
+              {!API.USE_MOCK 
+                ? 'Run a vendor scan from the search bar above to populate the live feed, or wait for background surveillance signals.'
+                : 'Mock signals will appear momentarily.'
+              }
+            </p>
           </div>
         ) : (
           /* Dark Terminal style Table */

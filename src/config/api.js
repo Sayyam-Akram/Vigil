@@ -24,6 +24,10 @@ export const API = {
     // Used by LiveSignalFeed component — polled every 5s
     LIVE_SIGNALS: `${BASE_URL}/signals/live`,
     
+    // GET /signals/stream
+    // SSE Stream endpoint for real-time multi-agent scans
+    SIGNAL_STREAM: `${BASE_URL}/signals/stream`,
+    
     // GET /health
     // Returns: { status: 'ok', version: '0.1.0', uptime: number }
     HEALTH: `${BASE_URL}/health`,

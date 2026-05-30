@@ -19,9 +19,8 @@ except ImportError:
     genai = None
 
 
-# ── Fix 2: Known Vendor Breach Context ────────────────────────────────────
-# Injected into the LLM prompt so the model has factual background to correctly
-# interpret scraped text. This is honest — we are performing retrospective analysis.
+# ── Known Vendor Breach Context ──────────────────────────────────────────
+# Injected into the LLM prompt for factual retrospective analysis.
 VENDOR_BREACH_CONTEXT: Dict[str, str] = {
     "snowflake": (
         "Snowflake experienced a major credential-stuffing breach in 2024. "
@@ -41,29 +40,28 @@ VENDOR_BREACH_CONTEXT: Dict[str, str] = {
     ),
 }
 
-# ── Fix 2: Structured Analyst Prompt ──────────────────────────────────────
-# Replaces the previous generic prompt. Gives the LLM explicit instructions,
-# risk indicator categories, and known breach context when available.
+# ── Structured Analyst Prompt ──────────────────────────────────────────────
+# Enhanced to handle raw deep-scraped content from Web Unlocker
 ANALYST_PROMPT_TEMPLATE = """You are a cybersecurity analyst evaluating third-party vendor risk signals.
 
 VENDOR BEING ANALYZED: {vendor}
 
 SCRAPED SOURCE TYPE: {source_type}
+DATA EXTRACTION METHOD: {extraction_method}
 SCRAPED CONTENT (first 2000 chars):
 {content}
 
 Your job: determine if this content contains evidence of security risk for {vendor}.
 
 RISK SIGNAL INDICATORS TO LOOK FOR:
-- Credential leaks, password dumps, data exposure
-- Unauthorized access, breach confirmation, hack reports
-- Executive departures from security roles
-- Regulatory fines, enforcement actions, violations
-- Ransomware attacks, malware incidents
-- Customer data theft or exposure
-- Ongoing security investigations
-- Exposed API keys, tokens, or secrets in public repositories
-- Documented breaches in HaveIBeenPwned or similar databases
+- Credential leaks: plaintext passwords, bcrypt/argon2 hashes, API keys, tokens
+- Unauthorized access: breach confirmations, hack reports, customer data exposure
+- Executive departures: security role resignations, CISO/VP transitions
+- Regulatory: fines, enforcement actions, SEC filings with risk disclosures
+- Ransomware/malware: active incidents, ransomware group claims
+- Code exposure: hardcoded secrets in public repos (AWS keys, database passwords)
+- Documented breaches: HaveIBeenPwned records, CISA KEV entries
+- Raw dump artifacts: paste site content with email:password patterns, session cookies
 
 {breach_context_block}
 
@@ -71,7 +69,7 @@ Respond ONLY with valid JSON (no markdown, no code fences):
 {{
   "severity": "critical|high|medium|low",
   "confidence": 0-100,
-  "signal_type": "credential_leak|news|job_signal|github|regulatory|shadow_it",
+  "signal_type": "credential_leak|news|job_signal|github|regulatory|shadow_it|deep_extraction",
   "summary": "one sentence describing the specific risk found",
   "risk_indicators_found": ["list", "of", "specific", "phrases", "or", "evidence", "found"]
 }}
@@ -85,7 +83,7 @@ Use this context when analyzing the scraped content — signals that align with 
 should be weighted more heavily in your assessment."""
 
 
-def build_analyst_prompt(vendor: str, source_type: str, content: str) -> str:
+def build_analyst_prompt(vendor: str, source_type: str, content: str, extraction_method: str = "SERP API") -> str:
     """
     Constructs the full LLM analyst prompt, injecting breach context
     for known demo vendors (Snowflake, Okta, etc.).
@@ -96,10 +94,14 @@ def build_analyst_prompt(vendor: str, source_type: str, content: str) -> str:
     else:
         breach_context_block = ""
 
+    # Truncate content to 2000 chars for LLM token budget
+    truncated = content[:2000]
+
     return ANALYST_PROMPT_TEMPLATE.format(
         vendor=vendor,
         source_type=source_type,
-        content=content[:2000],
+        extraction_method=extraction_method,
+        content=truncated,
         breach_context_block=breach_context_block,
     )
 
@@ -108,20 +110,37 @@ def run_layer3_llm_analyzer(vendor: str, text: str, source: str) -> Dict[str, An
     """
     Layer 3 Language Model Analyzer: Routes target risk data to Groq (Llama 3.3 70B)
     or Gemini Flash to perform structural classification.
-
-    Fix 2: Uses a structured ANALYST_PROMPT with risk indicator categories and
-    known breach context injected for Snowflake/Okta/etc.
-    Falls back gracefully to high-fidelity programmatic mocks if keys are absent.
+    
+    Enhanced for 2-step pipeline: handles raw deep-scraped content from Web Unlocker,
+    detects extraction method, and adjusts prompt accordingly.
     """
-    # Evaluate heuristic base metrics first (used for mock fallback and context)
+    # Determine extraction method based on source label
+    extraction_method = "SERP API"
+    if "web unlocker" in source.lower() or "deep" in source.lower():
+        extraction_method = "Web Unlocker Deep Extraction"
+    elif "github" in source.lower():
+        extraction_method = "GitHub API Direct"
+    elif "haveibeenpwned" in source.lower() or "hibp" in source.lower():
+        extraction_method = "HaveIBeenPwned API Direct"
+    elif "surveillance" in source.lower():
+        extraction_method = "Background Surveillance Sweep"
+
+    # Evaluate heuristic base metrics first
     heuristics = evaluate_layer2_rule_scorer(text, source)
 
-    # If no LLM keys are configured, go straight to mock
-    if settings.use_mock_pipeline:
-        return run_local_programmatic_mock(vendor, text, heuristics)
+    # Pre-process: extract high-value artifacts from raw text before LLM
+    extracted_artifacts = _extract_raw_artifacts(text)
+    if extracted_artifacts:
+        # Prepend artifact summary to text for LLM context
+        artifact_header = f"[EXTRACTED ARTIFACTS: {', '.join(extracted_artifacts[:5])}]\n\n"
+        text = artifact_header + text
 
-    # Fix 2: Build enriched prompt with structured instructions + breach context
-    prompt = build_analyst_prompt(vendor, source, text)
+    # If no LLM keys are configured, use mock
+    if settings.use_mock_pipeline:
+        return run_local_programmatic_mock(vendor, text, heuristics, extraction_method)
+
+    # Build enriched prompt with extraction method context
+    prompt = build_analyst_prompt(vendor, source, text, extraction_method)
 
     # 1. Try Groq Llama 3.3 70B (fastest, preferred)
     if settings.GROQ_API_KEY and Groq:
@@ -145,7 +164,6 @@ def run_layer3_llm_analyzer(vendor: str, text: str, source: str) -> Dict[str, An
             )
             result_text = chat_completion.choices[0].message.content
             parsed = json.loads(result_text)
-            # Ensure risk_indicators_found is always present
             parsed.setdefault("risk_indicators_found", [])
             return parsed
         except Exception as e:
@@ -167,36 +185,82 @@ def run_layer3_llm_analyzer(vendor: str, text: str, source: str) -> Dict[str, An
             logger.warning(f"Gemini API call encountered error, falling back to local mock: {e}")
 
     # 3. Fallback to high-fidelity programmatic mock
-    return run_local_programmatic_mock(vendor, text, heuristics)
+    return run_local_programmatic_mock(vendor, text, heuristics, extraction_method)
 
 
-def run_local_programmatic_mock(vendor: str, text: str, heuristics: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_raw_artifacts(text: str) -> list:
+    """
+    Pre-LLM extraction: scans raw text for high-value security artifacts
+    like credentials, API keys, bcrypt hashes, session tokens.
+    Returns a list of artifact type descriptions found.
+    """
+    import re
+    artifacts = []
+    text_lower = text.lower()
+
+    # AWS Access Keys
+    if re.search(r'AKIA[0-9A-Z]{16}', text):
+        artifacts.append("AWS_ACCESS_KEY_ID")
+    
+    # AWS Secret Keys
+    if re.search(r'[0-9a-zA-Z/+]{40}', text) and ("aws" in text_lower or "secret" in text_lower):
+        artifacts.append("AWS_SECRET_ACCESS_KEY")
+
+    # bcrypt hashes
+    if re.search(r'\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}', text):
+        artifacts.append("BCRYPT_PASSWORD_HASH")
+    
+    # Generic API keys / tokens
+    if re.search(r'(sk-|pk_|api[_-]key|token)\s*[:=]\s*[\'"]?\w{20,}', text, re.IGNORECASE):
+        artifacts.append("API_KEY_OR_TOKEN")
+
+    # Email:password patterns
+    if re.search(r'[\w.+-]+@[\w-]+\.[\w.]+\s*[:]\s*\S+', text):
+        artifacts.append("EMAIL_PASSWORD_PAIR")
+
+    # Database connection strings
+    if re.search(r'(postgresql|mysql|mongodb)://\w+:\w+@', text, re.IGNORECASE):
+        artifacts.append("DATABASE_CONNECTION_STRING")
+
+    # Session cookies / JWT
+    if re.search(r'(eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+)', text):
+        artifacts.append("JWT_TOKEN")
+
+    return artifacts
+
+
+def run_local_programmatic_mock(vendor: str, text: str, heuristics: Dict[str, Any], extraction_method: str = "SERP API") -> Dict[str, Any]:
     """
     High-fidelity programmatic generator mimicking structured JSON LLM responses
     so the dashboard works perfectly with zero credentials.
+    Enhanced for deep extraction content from Web Unlocker.
     """
     sig_type = heuristics["signal_type"]
     severity = heuristics["severity"]
     confidence = heuristics["confidence"]
 
-    # Boost confidence for known breach vendors (contextually justified)
+    # Boost confidence for known breach vendors
     demo_ctx = get_demo_context(vendor)
     if demo_ctx:
         confidence = min(98, confidence + 15)
 
+    # Boost for Web Unlocker deep extraction (higher fidelity data)
+    if extraction_method == "Web Unlocker Deep Extraction":
+        confidence = min(99, confidence + 10)
+
     text_lower = text.lower()
 
-    # Context-aware summary and risk indicators generation based on input text keywords
-    if "dump" in text_lower or "bcrypt" in text_lower or "email_list" in text_lower:
+    # Context-aware summary based on input text keywords
+    if "dump" in text_lower or "bcrypt" in text_lower or "email_list" in text_lower or "credential block" in text_lower:
         summary = f"Plaintext corporate credential dumps with active passwords and administrative configurations associated with {vendor} were discovered on a public paste site."
         risk_indicators = ["credential dump", f"admin@{vendor.lower().replace(' ', '')}.com", "plaintext password", "active staging endpoint"]
         sig_type = "credential_leak"
         severity = "critical"
-    elif "aws_access_key" in text_lower or "github.com" in text_lower or "api.github.com" in text_lower:
-        summary = f"An exposed contractor-owned GitHub repository affiliated with {vendor} assets was flagged containing active programmatic AWS secret access keys committed to public code files."
-        risk_indicators = ["API key exposure", "AWS access key", "hardcoded secret", "public GitHub repository"]
+    elif "aws_access_key" in text_lower or "akiaiosfodnn" in text_lower:
+        summary = f"An exposed contractor-owned repository affiliated with {vendor} assets was flagged containing active AWS secret access keys committed to public code files."
+        risk_indicators = ["API key exposure", "AWS access key", "hardcoded secret", "public repository"]
         sig_type = "github_exposure"
-        severity = "high"
+        severity = "critical" if "web unlocker" in extraction_method.lower() else "high"
     elif "isverified" in text_lower or "haveibeenpwned" in text_lower or "breachdate" in text_lower:
         summary = f"HaveIBeenPwned confirmed a verified domain breach record for {vendor}.com, exposing authentication tokens and session credentials."
         risk_indicators = ["verified domain breach", "compromised email logs", "HaveIBeenPwned confirmed"]
@@ -207,6 +271,11 @@ def run_local_programmatic_mock(vendor: str, text: str, heuristics: Dict[str, An
         risk_indicators = ["compromised credentials", "unauthorized session hijacking", "BleepingComputer reports"]
         sig_type = "news_mention"
         severity = "high"
+    elif "cisa" in text_lower or "cve-" in text_lower or "known exploited" in text_lower:
+        summary = f"CISA Known Exploited Vulnerabilities catalog lists active exploitation of {vendor}-related infrastructure components requiring immediate remediation."
+        risk_indicators = ["CISA KEV entry", "active exploitation confirmed", "critical CVSS score"]
+        sig_type = "regulatory_violation"
+        severity = "critical"
     elif "hiring" in text_lower or "incident response" in text_lower or "posted" in text_lower:
         summary = f"Recruitment volumes targeting emergency security incident responders and threat analysts at {vendor} spiked 4x above baseline, signaling active mitigation operations."
         risk_indicators = ["urgent recruitment", "4x hiring spike", "incident response engineer"]
@@ -217,10 +286,15 @@ def run_local_programmatic_mock(vendor: str, text: str, heuristics: Dict[str, An
         risk_indicators = ["Form 10-Q disclosure", "forensic specialists engaged", "cybersecurity assessment"]
         sig_type = "regulatory_violation"
         severity = "medium"
-    elif "vulnerability" in text_lower or "cve-" in text_lower or "techcrunch" in text_lower:
+    elif "vulnerability" in text_lower or "techcrunch" in text_lower:
         summary = f"Public security advisories advise mandatory credential and API key rotations following critical authentication vulnerabilities in {vendor}-affiliated integrations."
         risk_indicators = ["security advisory", "mandatory credential rotation", "critical vulnerability"]
         sig_type = "news_mention"
+        severity = "high"
+    elif "github.com" in text_lower or "api.github.com" in text_lower:
+        summary = f"An exposed contractor-owned GitHub repository affiliated with {vendor} assets was flagged containing active programmatic AWS secret access keys committed to public code files."
+        risk_indicators = ["API key exposure", "AWS access key", "hardcoded secret", "public GitHub repository"]
+        sig_type = "github_exposure"
         severity = "high"
     else:
         summary = f"Intelligence monitoring flagged active public web signals mentioning {vendor} in relation to potential security drifts. Verification processes suggest immediate auditing."

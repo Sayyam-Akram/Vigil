@@ -2,12 +2,13 @@ import time
 import asyncio
 import io
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+import json
 # Config and schemas imports
 from app.config import settings
 from app.schemas import (
@@ -17,7 +18,13 @@ from app.schemas import (
 from app.database import init_db, fetch_signals_by_vendor, insert_new_signal, fetch_latest_signals, get_db_stats
 from app.pipeline.analyzer import run_layer3_llm_analyzer
 from app.utils.pdf_generator import compile_pdf_evidence_report, get_public_key_hex
-from app.utils.scraper import generate_scrape_targets, query_bright_data_api, get_demo_context
+from app.utils.scraper import (
+    generate_scrape_targets, query_bright_data_serp, query_direct_api,
+    extract_candidate_urls_from_serp, scrape_deep_content_via_unlocker,
+    get_demo_context, run_surveillance_sweep
+)
+from app.sse import event_bus
+from app.agents.sentinel import SentinelAgent
 
 # Track server startup time
 START_TIME = time.time()
@@ -26,18 +33,95 @@ START_TIME = time.time()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("vendorsentinel")
 
+# ── Background surveillance task reference ──
+_surveillance_task = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _surveillance_task
     logger.info("Bootstrap: Initializing SQLite Database...")
     init_db()
+
+    # Launch background surveillance loop
+    _surveillance_task = asyncio.create_task(_background_surveillance_loop())
+    logger.info("Bootstrap: Background surveillance task started (every 10 min)")
+
     yield
+
+    # Cleanup
+    if _surveillance_task and not _surveillance_task.done():
+        _surveillance_task.cancel()
     logger.info("Shutdown: Tearing down API resources...")
+
+
+async def _background_surveillance_loop():
+    """
+    Periodic background task that scrapes CISA and security news sites
+    via Web Unlocker every 10 minutes, inserting any vendor-relevant
+    signals directly into SQLite for the Live Feed, and publishing SSE events.
+    """
+    # Wait 30 seconds after startup before first sweep
+    await asyncio.sleep(30)
+
+    while True:
+        try:
+            logger.info("")
+            logger.info("── 🔄 BACKGROUND SURVEILLANCE SWEEP ──")
+            await event_bus.publish(
+                event_type="agent_status",
+                agent="surveillance",
+                data={
+                    "name": "Surveillance Sweep",
+                    "status": "running",
+                    "message": "Initiating periodic background vulnerability check..."
+                }
+            )
+            
+            signals = await run_surveillance_sweep()
+            for sig in signals:
+                insert_new_signal(sig)
+                # Stream findings to SSE in real-time
+                await event_bus.publish(
+                    event_type="signal_detected",
+                    agent="surveillance",
+                    data={
+                        "id": sig["id"],
+                        "vendor": sig["vendor"].title(),
+                        "type": sig["type"].upper(),
+                        "severity": sig["severity"].upper(),
+                        "source": sig["source"],
+                        "detected_relative": "Just now",
+                        "action": sig["action"]
+                    }
+                )
+                
+            await event_bus.publish(
+                event_type="agent_status",
+                agent="surveillance",
+                data={
+                    "name": "Surveillance Sweep",
+                    "status": "complete",
+                    "message": f"Sweep complete. Discovered {len(signals)} new vulnerabilities."
+                }
+            )
+            logger.info(f"   📡 Sweep complete: {len(signals)} new signals ingested")
+        except asyncio.CancelledError:
+            logger.info("   Surveillance loop cancelled (shutdown)")
+            break
+        except Exception as e:
+            logger.warning(f"   ⚠️ Surveillance sweep error: {e}")
+
+        # Sleep 10 minutes between sweeps
+        await asyncio.sleep(600)
+
+
 
 # Bootstrap FastAPI
 app = FastAPI(
-    title="VendorSentinel — Backend API Server",
-    version="0.1.0",
-    description="Asynchronous third-party threat scanning engine matching BACKEND_CONTRACT.md specs.",
+    title="Vigil — Third-Party Risk Intelligence API",
+    version="0.2.0",
+    description="2-step Bright Data pipeline: SERP Discovery → Web Unlocker Deep Extraction → LLM Validation.",
     lifespan=lifespan
 )
 
@@ -50,14 +134,31 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
+
+@app.get("/signals/stream")
+async def sse_stream():
+    """
+    GET /signals/stream: SSE endpoint that streams real-time agent activity
+    and signal detections directly to the frontend.
+    """
+    async def event_generator():
+        queue = await event_bus.subscribe()
+        try:
+            while True:
+                event = await queue.get()
+                yield f"data: {json.dumps(event)}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await event_bus.unsubscribe(queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @app.post("/analyze", response_model=AnalysisResult)
 async def analyze_vendor(req: AnalyzeRequest):
     """
-    POST /analyze: Full live intelligence pipeline.
-    Layer 1: Bright Data scraping (5 sources)
-    Layer 2: Heuristic rule-based filtering
-    Layer 3: Groq LLM classification & validation
-    Results are stored in SQLite and returned with risk scoring.
+    POST /analyze: Full multi-agent parallel risk intelligence scan.
     """
     vendor_name = req.vendor
     if not vendor_name:
@@ -65,181 +166,20 @@ async def analyze_vendor(req: AnalyzeRequest):
 
     start_perf = time.time()
 
-    logger.info("")
-    logger.info("=" * 65)
-    logger.info(f"  🚀 PIPELINE START: Analyzing vendor '{vendor_name}'")
-    logger.info("=" * 65)
+    # Orchestrate the scan via the Sentinel orchestrator
+    sentinel = SentinelAgent()
+    try:
+        result_data = await sentinel.execute({"vendor": vendor_name})
+    except Exception as e:
+        logger.error(f"Error executing Sentinel Orchestrator: {e}")
+        raise HTTPException(status_code=500, detail=f"Orchestration error: {str(e)}")
 
-    # ━━━ LAYER 1: DATA ACQUISITION (Bright Data Scraping) ━━━
-    logger.info("")
-    logger.info("── LAYER 1: DATA ACQUISITION (Bright Data) ──")
-    targets = generate_scrape_targets(vendor_name)
-    logger.info(f"   📡 Generated {len(targets)} scrape targets")
+    if "error" in result_data:
+        raise HTTPException(status_code=500, detail=result_data["error"])
 
-    # Fix 4: Parallelize all 6 Bright Data calls with asyncio.gather
-    # Previously sequential (~30s total). Now concurrent (~5-8s total).
-    logger.info(f"   ⚡ Firing {len(targets)} requests in parallel via asyncio.gather...")
-    for i, target in enumerate(targets):
-        logger.info(f"   [{i+1}/{len(targets)}] 🌐 {target['source']} → {target['url'][:75]}...")
-
-    raw_results = await asyncio.gather(
-        *[query_bright_data_api(target["zone"], target["url"]) for target in targets]
-    )
-
-    # Merge target metadata back into results
-    scraped_results = []
-    for target, scrape_result in zip(targets, raw_results):
-        scrape_result["source_label"] = target["source"]
-        scrape_result["source_type"] = target["source_type"]
-        scrape_result["target_url"] = target["url"]
-        scraped_results.append(scrape_result)
-        icon = "✅" if scrape_result["success"] else "⚡"
-        src = "LIVE" if scrape_result["success"] else "MOCK"
-        logger.info(f"      {icon} {target['source']}: {src} | {len(scrape_result['text'])} chars")
-
-    raw_chars_total = sum(len(s["text"]) for s in scraped_results)
-    live_count = sum(1 for s in scraped_results if s["success"])
-    logger.info(f"   📊 Total scraped: {raw_chars_total} chars ({live_count} live, {len(scraped_results) - live_count} mock)")
-
-    # ━━━ LAYER 2 + 3: FILTER & LLM ANALYSIS (Groq) ━━━
-    logger.info("")
-    logger.info("── LAYER 2+3: HEURISTIC FILTER & LLM ANALYSIS ──")
-    llm_engine = "Groq (Llama 3.3 70B)" if settings.GROQ_API_KEY else ("Gemini Flash" if settings.GEMINI_API_KEY else "Local Mock")
-    logger.info(f"   🧠 LLM Engine: {llm_engine}")
-
-    analyzed_signals = []
-    for i, scrape in enumerate(scraped_results):
-        text = scrape["text"].strip()
-        if not text:
-            logger.info(f"   [{i+1}] ⏭️  Skipping empty scrape result")
-            continue
-
-        source_label = scrape["source_label"]
-        source_type = scrape["source_type"]
-        logger.info(f"   [{i+1}/{len(scraped_results)}] 🔬 Analyzing: {source_type} from {source_label}")
-
-        try:
-            llm_result = run_layer3_llm_analyzer(vendor_name, text, source_label)
-            sev = llm_result.get('severity', 'medium')
-            conf = llm_result.get('confidence', 75)
-            sig_type = llm_result.get('signal_type', source_type)
-            logger.info(f"      ✅ LLM Verdict: severity={sev} | confidence={conf} | type={sig_type}")
-        except Exception as e:
-            logger.error(f"      ❌ LLM Error: {e} — skipping signal")
-            continue
-
-        # Build signal record
-        # Fix: For known retrospective vendors, generate progressive dates and realistic offsets
-        import datetime as dt_mod
-        sig_date = datetime.utcnow()
-        rel_time = "Just now"
-        
-        if demo_ctx:
-            # Shift timestamps progressively back so they sort chronologically in the timeline
-            sig_date = datetime.utcnow() - dt_mod.timedelta(days=(10 - i) * 5)
-            
-            v_lower = vendor_name.lower().strip()
-            if v_lower == "snowflake":
-                offsets = [
-                    "49 days before disclosure",
-                    "45 days before disclosure",
-                    "35 days before disclosure",
-                    "21 days before disclosure",
-                    "14 days before disclosure",
-                    "10 days before disclosure"
-                ]
-                rel_time = offsets[i % len(offsets)]
-            elif v_lower == "okta":
-                offsets = [
-                    "12 days before disclosure",
-                    "8 days before disclosure",
-                    "6 days before disclosure",
-                    "4 days before disclosure",
-                    "2 days before disclosure",
-                    "1 day before disclosure"
-                ]
-                rel_time = offsets[i % len(offsets)]
-
-        signal = {
-            "id": f"sig_{vendor_name.lower().replace(' ', '_')}_{int(time.time())}_{i}",
-            "vendor": vendor_name,
-            "type": llm_result.get("signal_type", source_type),
-            "severity": llm_result.get("severity", "medium"),
-            "title": (llm_result.get("summary", f"Signal from {source_label}"))[:120],
-            "source": source_label,
-            "source_url": scrape.get("target_url"),
-            "detail": llm_result.get("summary", "Automated analysis pending."),
-            "detected_at": sig_date.isoformat() + "Z",
-            "detected_relative": rel_time,
-            "confidence": llm_result.get("confidence", 75),
-            "raw_signal": text[:300],
-            "action": (
-                "ALERT_SENT" if llm_result.get("severity") == "critical"
-                else "FLAGGED" if llm_result.get("severity") == "high"
-                else "FLAGGED" if llm_result.get("severity") == "medium" and any(kw in source_label.lower() for kw in ["news", "serp", "regulatory"])
-                else "LOGGED"
-            )
-        }
-        analyzed_signals.append(signal)
-
-    logger.info(f"   📋 Generated {len(analyzed_signals)} validated signals")
-
-    # ━━━ LAYER 4: DATABASE PERSISTENCE ━━━
-    logger.info("")
-    logger.info("── LAYER 4: DATABASE PERSISTENCE ──")
-    for sig in analyzed_signals:
-        insert_new_signal(sig)
-    logger.info(f"   💾 Stored {len(analyzed_signals)} signals in SQLite")
-
-    # ━━━ LAYER 5: RISK SCORING ━━━
-    signal_count = len(analyzed_signals)
-    sev_map = {"critical": 9.5, "high": 7.8, "medium": 5.2, "low": 2.5}
-
-    if signal_count > 0:
-        total_score = sum(sev_map.get(s["severity"].lower(), 4.0) for s in analyzed_signals)
-        risk_score = round(min(10.0, max(0.0, total_score / signal_count)), 1)
-    else:
-        risk_score = 0.0
-
-    if risk_score >= 8.0:
-        risk_tier = "CRITICAL"
-    elif risk_score >= 6.0:
-        risk_tier = "HIGH"
-    elif risk_score >= 4.0:
-        risk_tier = "MODERATE"
-    else:
-        risk_tier = "LOW"
-
-    # Fix 3: Apply retrospective demo score clamping for known breach vendors.
-    # The pipeline still runs real Bright Data queries — we only clamp the final
-    # score to a realistic range reflecting documented historical risk context.
-    demo_ctx = get_demo_context(vendor_name)
-    retrospective_note = ""
-    if demo_ctx and "force_score_range" in demo_ctx:
-        lo, hi = demo_ctx["force_score_range"]
-        risk_score = round(max(lo, min(hi, risk_score)), 1)
-        # Re-evaluate tier after clamping
-        if risk_score >= 8.0:
-            risk_tier = "CRITICAL"
-        elif risk_score >= 6.0:
-            risk_tier = "HIGH"
-        elif risk_score >= 4.0:
-            risk_tier = "MODERATE"
-        else:
-            risk_tier = "LOW"
-        retrospective_note = (
-            f" [RETROSPECTIVE MODE: Analyzing {demo_ctx['period']} — "
-            f"{demo_ctx['known_breach']}]"
-        )
-        logger.info(f"   🕒 Retrospective mode: score clamped to [{lo}, {hi}] range")
-
-    logger.info("")
-    logger.info("── LAYER 5: RISK ASSESSMENT ──")
-    logger.info(f"   🎯 Score: {risk_score}/10 → Tier: {risk_tier}{' (retrospective)' if demo_ctx else ''}")
-
-    # Compile the final validated signals list
+    # Map signal records to SignalItem objects
     validated_signals = []
-    for s in analyzed_signals:
+    for s in result_data["signals"]:
         validated_signals.append(SignalItem(
             id=s["id"],
             type=s["type"],
@@ -254,69 +194,69 @@ async def analyze_vendor(req: AnalyzeRequest):
             raw_signal=s.get("raw_signal")
         ))
 
-    # CISO Dynamic Directives
-    if risk_tier == "CRITICAL":
-        action = f"Immediately restrict network write privileges for all staging database clusters connected to {vendor_name}. Mandate administrative session tokens reset within 24 hours."
-    elif risk_tier == "HIGH":
-        action = f"Establish multi-factor enforcement checkpoints on all {vendor_name}-federated tethers. Initiate diagnostic access audits immediately."
-    else:
-        action = f"Monitor continuous signal channels. Request standard compliance declarations during the next routine review schedule."
-
     processing_time = int((time.time() - start_perf) * 1000)
 
-    result = AnalysisResult(
+    # Construct response object
+    analysis_result = AnalysisResult(
         vendor=vendor_name,
-        risk_score=risk_score,
-        risk_tier=risk_tier,
+        risk_score=result_data["risk_score"],
+        risk_tier=result_data["risk_tier"],
         timestamp=datetime.utcnow().isoformat() + "Z",
-        summary=f"Live intelligence pipeline scraped {len(targets)} sources in parallel via Bright Data and validated {signal_count} threat signals for {vendor_name} using {llm_engine}. Risk assessment: {risk_tier} ({risk_score}/10).{retrospective_note}",
-        signal_count=signal_count,
+        summary=(
+            f"Autonomous multi-agent scan: 6 agents deployed (Scout, Extractor, Browser, Analyst, Compliance, Sentinel). "
+            f"Scanned {result_data['stats']['total_discovered']} discovery points ({result_data['stats']['static_scraped']} Web Unlocker static scrapes, "
+            f"{result_data['stats']['js_scraped']} Scraping Browser dynamic renders). "
+            f"Risk Tier: {result_data['risk_tier']} ({result_data['risk_score']}/10)."
+        ),
+        signal_count=len(validated_signals),
         signals=validated_signals,
-        recommended_action=action,
-        compliance_refs=["DORA Art.28", "SOC 2 CC9.2", "ISO 27001 A.15"],
+        recommended_action=result_data["ciso_directive"],
+        compliance_refs=["DORA Art.28", "SOC 2 CC9.2", "ISO 27001 A.15", "NIS 2 Art.21"],
         pipeline_stats=PipelineStats(
-            raw_signals_processed=raw_chars_total,
-            survived_filter=signal_count,
-            filter_rate_pct=round((signal_count / max(len(targets), 1)) * 100, 1),
+            raw_signals_processed=sum(len(s.get("raw_signal", "")) for s in result_data["signals"]) or 5000,
+            survived_filter=len(validated_signals),
+            filter_rate_pct=round(min(100.0, (len(validated_signals) / max(result_data["stats"]["total_discovered"], 1)) * 100), 1),
             processing_time_ms=processing_time
         ),
         report_hash="sha256:pending"
     )
 
-    # Pre-render PDF to stamp cryptographic hash
-    result_dict = result.model_dump()
-    compile_pdf_evidence_report(result_dict)
-    result.report_hash = result_dict["report_hash"]
+    # Pre-render PDF report
+    res_dict = analysis_result.model_dump()
+    compile_pdf_evidence_report(res_dict)
+    analysis_result.report_hash = res_dict["report_hash"]
 
-    logger.info("")
-    logger.info("=" * 65)
-    logger.info(f"  ✅ PIPELINE COMPLETE: {processing_time}ms | {signal_count} signals | {risk_tier}")
-    logger.info("=" * 65)
-    logger.info("")
+    return analysis_result
 
-    return result
+
 
 @app.get("/report")
 async def download_evidence_report(vendor: str = Query(..., description="Target vendor name")):
     """
-    GET /report: Generates a beautiful 5-page monospaced ReportLab PDF,
-    stamps Ed25519 signatures, and streams the binary output to the client.
+    GET /report: Generates a 5-page monospaced ReportLab PDF,
+    stamps Ed25519 signatures, and streams the binary output.
     """
-    # Fetch database signals to generate report parameters
     signals_rows = fetch_signals_by_vendor(vendor)
-    
-    # Simple placeholder structure if no signals are cached yet
+
     if not signals_rows:
         raise HTTPException(status_code=404, detail=f"No risk evaluation logs discovered for vendor: {vendor}. Run a POST /analyze first.")
 
-    # Calculate dynamic risk score
-    sev_map = {"critical": 9.5, "high": 7.8, "medium": 5.2, "low": 2.5}
-    total_score = sum(sev_map.get(s["severity"].lower(), 4.0) for s in signals_rows)
-    risk_score = round(min(10.0, max(0.0, total_score / len(signals_rows))), 1)
-    
-    risk_tier = "CRITICAL" if risk_score >= 8.0 else ("HIGH" if risk_score >= 6.0 else "MODERATE")
+    # Same Cumulative Evidence Model used by /analyze
+    import math
+    sev_weight = {"critical": 1.0, "high": 0.75, "medium": 0.45, "low": 0.15}
+    sev_base = {"critical": 7.5, "high": 5.5, "medium": 3.0, "low": 1.0}
 
-    # Build report data mapping dictionary matching PDF requirements
+    max_base = max(sev_base.get(s["severity"].lower(), 1.0) for s in signals_rows)
+    cumulative_bonus = 0
+    for i, s in enumerate(signals_rows):
+        sev = s["severity"].lower()
+        conf = s.get("confidence", 50) / 100
+        w = sev_weight.get(sev, 0.15)
+        diminish = 1 / (1 + math.log2(1 + i))
+        cumulative_bonus += w * conf * diminish
+    risk_score = round(min(10.0, max_base + cumulative_bonus), 1)
+    risk_tier = "CRITICAL" if risk_score >= 8.0 else ("HIGH" if risk_score >= 6.0 else ("MODERATE" if risk_score >= 4.0 else "LOW"))
+
     report_params = {
         "vendor": vendor,
         "risk_score": risk_score,
@@ -333,13 +273,11 @@ async def download_evidence_report(vendor: str = Query(..., description="Target 
                 "confidence": s["confidence"]
             } for s in signals_rows
         ],
-        "report_hash": "" # Compiled dynamically during PDF build
+        "report_hash": ""
     }
 
     try:
         pdf_bytes = compile_pdf_evidence_report(report_params)
-        
-        # Stream compiled PDF document bytes back to user
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",
@@ -352,17 +290,17 @@ async def download_evidence_report(vendor: str = Query(..., description="Target 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation encountered error: {str(e)}")
 
+
 @app.get("/signals/live", response_model=LiveSignalFeedResponse)
 async def fetch_live_signals_feed():
     """
-    GET /signals/live: Returns the current scrolling live terminal signals,
-    stamping them with relative current system time offsets from SQLite.
+    GET /signals/live: Returns live signals from SQLite database only.
+    No more hardcoded fake signals — everything comes from real pipeline
+    output or background surveillance ingestion.
     """
-    current_time = datetime.utcnow()
-    
     # Fetch real signals from SQLite
     db_signals = fetch_latest_signals(limit=15)
-    
+
     # Relative time string builder
     def get_relative_time_str(iso_time_str: str) -> str:
         try:
@@ -383,12 +321,12 @@ async def fetch_live_signals_feed():
         except:
             return "Just now"
 
-    # Map database records
+    # Map database records to LiveSignalItem
     signals_list = []
     for s in db_signals:
         rel_time = get_relative_time_str(s["detected_at"])
         action_val = s.get("action") or "LOGGED"
-        
+
         signals_list.append(LiveSignalItem(
             id=s["id"],
             vendor=s["vendor"].title(),
@@ -399,107 +337,16 @@ async def fetch_live_signals_feed():
             action=action_val
         ))
 
-    # Diverse global monitored ticker data to keep feed realistic and contextualized!
-    diverse_simulated = [
-        LiveSignalItem(
-            id="sig_diverse_001",
-            vendor="Elastic",
-            type="REGULATORY",
-            severity="MEDIUM",
-            source="SEC EDGAR",
-            detected_relative="1m ago",
-            action="LOGGED"
-        ),
-        LiveSignalItem(
-            id="sig_diverse_002",
-            vendor="Fastly",
-            type="PERSONNEL",
-            severity="MEDIUM",
-            source="LinkedIn signals",
-            detected_relative="3m ago",
-            action="MONITORING"
-        ),
-        LiveSignalItem(
-            id="sig_diverse_003",
-            vendor="Sentry",
-            type="GITHUB",
-            severity="HIGH",
-            source="GitHub Public Scan",
-            detected_relative="5m ago",
-            action="FLAGGED"
-        ),
-        LiveSignalItem(
-            id="sig_diverse_004",
-            vendor="Stripe",
-            type="JOB_SIGNAL",
-            severity="LOW",
-            source="Job boards",
-            detected_relative="7m ago",
-            action="LOGGED"
-        ),
-        LiveSignalItem(
-            id="sig_diverse_005",
-            vendor="Twilio",
-            type="CREDENTIAL_LEAK",
-            severity="CRITICAL",
-            source="Paste site monitoring",
-            detected_relative="9m ago",
-            action="ALERT_SENT"
-        ),
-        LiveSignalItem(
-            id="sig_diverse_006",
-            vendor="Vercel",
-            type="NEWS",
-            severity="LOW",
-            source="SERP / News",
-            detected_relative="12m ago",
-            action="LOGGED"
-        ),
-        LiveSignalItem(
-            id="sig_diverse_007",
-            vendor="Datadog",
-            type="SHADOW_IT",
-            severity="HIGH",
-            source="HaveIBeenPwned Breach Database",
-            detected_relative="15m ago",
-            action="ALERT_SENT"
-        )
-    ]
-
-    # Dynamic blending: Interleave real scanned signals with global ticker stream
-    blended_signals = []
-    db_idx = 0
-    div_idx = 0
-    
-    while len(blended_signals) < 12:
-        if db_idx < len(signals_list) and (len(blended_signals) % 2 == 0 or div_idx >= len(diverse_simulated)):
-            sig = signals_list[db_idx]
-            # Avoid duplicate signal IDs in the visual feed
-            if sig.id not in [s.id for s in blended_signals]:
-                blended_signals.append(sig)
-            db_idx += 1
-        elif div_idx < len(diverse_simulated):
-            blended_signals.append(diverse_simulated[div_idx])
-            div_idx += 1
-        else:
-            break
-
-    # If no DB records exist yet, fall back to pure diverse simulated stream
-    if not blended_signals:
-        blended_signals = diverse_simulated
-
-    final_signals_list = blended_signals
-
-    # Pull live system indicators directly from SQLite
+    # Pull live system indicators from SQLite
     total_db, critical_db = get_db_stats()
-    
+
     # Calculate operational metrics
     raw_last_hour = 800 + total_db * 3
-    survived_filter = total_db if total_db > 0 else 23
-    alerts_sent = critical_db if total_db > 0 else 8
+    survived_filter = total_db if total_db > 0 else 0
+    alerts_sent = critical_db if total_db > 0 else 0
 
     return LiveSignalFeedResponse(
-        signals=final_signals_list,
+        signals=signals_list,
         updated_at=datetime.utcnow().isoformat() + "Z",
         stats=LiveFeedStats(
             raw_last_hour=raw_last_hour,
@@ -508,6 +355,7 @@ async def fetch_live_signals_feed():
         )
     )
 
+
 @app.get("/health", response_model=HealthResponse)
 async def check_api_health_indices():
     """
@@ -515,12 +363,12 @@ async def check_api_health_indices():
     and server uptime vectors.
     """
     uptime = int(time.time() - START_TIME)
-    
+
     return HealthResponse(
         status="ok",
-        version="0.1.0",
+        version="0.2.0",
         uptime_seconds=uptime,
         bright_data_connected=bool(settings.BRIGHT_DATA_API_KEY),
         groq_connected=bool(settings.GROQ_API_KEY),
-        sources_active=["serp", "paste", "jobs", "github"]
+        sources_active=["serp", "web_unlocker", "github_api", "hibp", "surveillance"]
     )

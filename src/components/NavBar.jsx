@@ -44,11 +44,14 @@ export default function NavBar() {
   }, []);
 
   const handleScanClick = () => {
-    const el = document.getElementById('live-feed');
+    const el = document.getElementById('hero');
     if (el) {
       el.scrollIntoView({ behavior: 'smooth' });
-      // Dispatch a custom event to trigger scanner loading state in LiveSignalFeed
-      window.dispatchEvent(new CustomEvent('trigger-mock-scan'));
+      // Focus the search input after scroll completes
+      setTimeout(() => {
+        const input = document.querySelector('#hero input[type="text"]');
+        if (input) input.focus();
+      }, 600);
     }
   };
 
@@ -63,7 +66,7 @@ export default function NavBar() {
           VIGIL
         </span>
         <span className="font-mono text-[10px] bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-text-tertiary">
-          v0.1.0
+          v0.2.0
         </span>
       </div>
 
