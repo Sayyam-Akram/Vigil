@@ -76,11 +76,44 @@ export default function Hero({ onScanVendor, isLoading, vendorData, replayMode }
           </h1>
 
           <p className="font-mono text-xs text-text-secondary max-w-xl leading-relaxed">
-            Continuous threat intelligence that detects vendor breaches before public disclosure. Search a monitored vendor to replay their detection timeline, or enter any vendor name for a live scan.
+            Continuous threat intelligence that detects third-party security vulnerabilities before public disclosure. Powered by a collaborative swarm of 6 specialized autonomous cognitive agents.
           </p>
 
+          {/* Multi-Agent Pill Indicators */}
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <span className="font-mono text-[9px] text-text-tertiary uppercase tracking-wider">
+              Autonomous Swarm:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              <span className="bg-white/5 border border-white/5 rounded-full px-2.5 py-0.5 font-mono text-[9px] text-text-secondary flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-brand-green" />
+                Sentinel
+              </span>
+              <span className="bg-white/5 border border-white/5 rounded-full px-2.5 py-0.5 font-mono text-[9px] text-text-secondary flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-brand-blue" />
+                Scout
+              </span>
+              <span className="bg-white/5 border border-white/5 rounded-full px-2.5 py-0.5 font-mono text-[9px] text-text-secondary flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-brand-yellow" />
+                Extractor
+              </span>
+              <span className="bg-white/5 border border-white/5 rounded-full px-2.5 py-0.5 font-mono text-[9px] text-text-secondary flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-brand-orange" />
+                Browser
+              </span>
+              <span className="bg-white/5 border border-white/5 rounded-full px-2.5 py-0.5 font-mono text-[9px] text-text-secondary flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-brand-red" />
+                Analyst
+              </span>
+              <span className="bg-white/5 border border-white/5 rounded-full px-2.5 py-0.5 font-mono text-[9px] text-text-secondary flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-purple-500" />
+                Compliance
+              </span>
+            </div>
+          </div>
+
           {/* Interactive Search Console Input */}
-          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2 max-w-md w-full">
+          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2 max-w-md w-full pt-2">
             <input 
               type="text" 
               value={targetInput}
@@ -97,6 +130,18 @@ export default function Hero({ onScanVendor, isLoading, vendorData, replayMode }
               {replayMode ? <span className="animate-pulse">REPLAYING TIMELINE...</span> : isLoading ? 'ANALYZING...' : 'ANALYZE VENDOR →'}
             </button>
           </form>
+
+          {/* Inline guides */}
+          <div className="font-mono text-[10px] text-text-tertiary leading-relaxed space-y-1 max-w-md">
+            <div className="flex items-start gap-1.5">
+              <span className="text-brand-green mt-0.5">🔍</span>
+              <span><strong>Monitored Studies:</strong> Enter <span className="text-text-primary underline cursor-pointer hover:text-brand-green" onClick={() => setTargetInput('Snowflake')}>Snowflake</span> or <span className="text-text-primary underline cursor-pointer hover:text-brand-green" onClick={() => setTargetInput('Okta')}>Okta</span> to replay historical prediction timelines.</span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <span className="text-brand-orange mt-0.5">⚡</span>
+              <span><strong>Live Scan Swarm:</strong> Enter any other vendor to deploy the 6-agent real-time intelligence pipeline.</span>
+            </div>
+          </div>
 
           {/* Core Stats dynamically updated based on active vendor data */}
           <div className="flex items-center gap-8 py-4 border-t border-white/5 max-w-md">

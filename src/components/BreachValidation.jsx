@@ -37,7 +37,7 @@ export default function BreachValidation({ vendorData, replayMode }) {
   
   // Map ALL threat signals to timeline dots dynamically
   const timelineSignals = sortedSignals.map((s, idx) => ({
-    date: s.detected_relative ? s.detected_relative.replace(' before disclosure', '').replace(' ago', '').toUpperCase() : `SIGNAL #${idx + 1}`,
+    date: s.detected_relative ? s.detected_relative.replace(/\s*(before disclosure|before|ago)/i, '').toUpperCase() : `SIGNAL #${idx + 1}`,
     id: s.id,
     sev: s.severity,
     title: s.title

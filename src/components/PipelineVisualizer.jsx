@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Filter, Brain, Activity, FileText, Bell, HelpCircle } from 'lucide-react';
+import { Globe, Filter, Brain, Activity, FileText, Bell, HelpCircle, Cpu, Radar, Download, AppWindow, Shield } from 'lucide-react';
 import { PIPELINE_NODES } from '../data/mockData';
 
 const iconMap = {
@@ -162,6 +162,120 @@ export default function PipelineVisualizer() {
             </div>
           </div>
 
+        </div>
+
+        {/* Multi-Agent Orchestration Core Grid */}
+        <div className="flex flex-col space-y-6 border-t border-white/5 pt-12 mt-12">
+          <div className="flex flex-col space-y-2">
+            <div className="flex items-center gap-2 text-brand-green uppercase tracking-widest text-[10px] font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-green" />
+              ● AGENTIC ORCHESTRATION · 6 AUTONOMOUS MODULES
+            </div>
+            <h3 className="font-serif italic text-2xl text-text-primary">
+              Parallel execution by <span className="text-brand-green">specialized cognitive agents.</span>
+            </h3>
+            <p className="font-mono text-xs text-text-secondary max-w-3xl leading-relaxed">
+              Vigil deploys a swarm of 6 specialized autonomous agents that collaborate in parallel to extract, analyze, and map third-party vulnerability markers before they reach the public awareness threshold.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Agent 1: Sentinel */}
+            <div className="bg-bg-surface border border-white/5 hover:border-brand-green/20 rounded-xl p-5 flex flex-col space-y-3 shadow-xl transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-brand-green/5 border border-brand-green/20 flex items-center justify-center text-brand-green">
+                  <Cpu className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-mono font-bold text-xs text-text-primary uppercase tracking-wider">Sentinel Agent</h4>
+                  <span className="font-mono text-[9px] text-text-tertiary uppercase tracking-widest">Master Orchestrator</span>
+                </div>
+              </div>
+              <p className="font-mono text-[10px] text-text-secondary leading-relaxed flex-1">
+                Coordinates execution lifecycles, spawns discovery crawls in parallel, handles SQLite database transactions, and manages the Server-Sent Events (SSE) active state telemetry.
+              </p>
+            </div>
+
+            {/* Agent 2: Scout */}
+            <div className="bg-bg-surface border border-white/5 hover:border-brand-green/20 rounded-xl p-5 flex flex-col space-y-3 shadow-xl transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-brand-green/5 border border-brand-green/20 flex items-center justify-center text-brand-green">
+                  <Radar className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-mono font-bold text-xs text-text-primary uppercase tracking-wider">Scout Agent</h4>
+                  <span className="font-mono text-[9px] text-text-tertiary uppercase tracking-widest">Discovery Engine</span>
+                </div>
+              </div>
+              <p className="font-mono text-[10px] text-text-secondary leading-relaxed flex-1">
+                Performs time-targeted sweeps using the Bright Data SERP zone and queries direct code-search APIs in parallel to isolate potential vendor credentials leakage.
+              </p>
+            </div>
+
+            {/* Agent 3: Extractor */}
+            <div className="bg-bg-surface border border-white/5 hover:border-brand-green/20 rounded-xl p-5 flex flex-col space-y-3 shadow-xl transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-brand-green/5 border border-brand-green/20 flex items-center justify-center text-brand-green">
+                  <Download className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-mono font-bold text-xs text-text-primary uppercase tracking-wider">Extractor Agent</h4>
+                  <span className="font-mono text-[9px] text-text-tertiary uppercase tracking-widest">Static Web Unlocker</span>
+                </div>
+              </div>
+              <p className="font-mono text-[10px] text-text-secondary leading-relaxed flex-1">
+                Crawls and scrapes static text dumps, pastebins, and security news portals in parallel using Bright Data's Web Unlocker proxy networks to secure raw text intelligence.
+              </p>
+            </div>
+
+            {/* Agent 4: Browser */}
+            <div className="bg-bg-surface border border-white/5 hover:border-brand-green/20 rounded-xl p-5 flex flex-col space-y-3 shadow-xl transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-brand-green/5 border border-brand-green/20 flex items-center justify-center text-brand-green">
+                  <AppWindow className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-mono font-bold text-xs text-text-primary uppercase tracking-wider">Browser Agent</h4>
+                  <span className="font-mono text-[9px] text-text-tertiary uppercase tracking-widest">Dynamic Scraping Browser</span>
+                </div>
+              </div>
+              <p className="font-mono text-[10px] text-text-secondary leading-relaxed flex-1">
+                Launches Chromium connected over CDP to Bright Data's Scraping Browser to render dynamic elements on JS-heavy security advisories (e.g. NVD CVE cards, status dashboards).
+              </p>
+            </div>
+
+            {/* Agent 5: Analyst */}
+            <div className="bg-bg-surface border border-white/5 hover:border-brand-green/20 rounded-xl p-5 flex flex-col space-y-3 shadow-xl transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-brand-green/5 border border-brand-green/20 flex items-center justify-center text-brand-green">
+                  <Brain className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-mono font-bold text-xs text-text-primary uppercase tracking-wider">Analyst Agent</h4>
+                  <span className="font-mono text-[9px] text-text-tertiary uppercase tracking-widest">LLM Threat Classifier</span>
+                </div>
+              </div>
+              <p className="font-mono text-[10px] text-text-secondary leading-relaxed flex-1">
+                Runs high-speed parallel LLM analysis (Llama-3.3-70B) on raw text chunks to validate security markers, identify affected components, and extract active credentials.
+              </p>
+            </div>
+
+            {/* Agent 6: Compliance */}
+            <div className="bg-bg-surface border border-white/5 hover:border-brand-green/20 rounded-xl p-5 flex flex-col space-y-3 shadow-xl transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-brand-green/5 border border-brand-green/20 flex items-center justify-center text-brand-green">
+                  <Shield className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-mono font-bold text-xs text-text-primary uppercase tracking-wider">Compliance Agent</h4>
+                  <span className="font-mono text-[9px] text-text-tertiary uppercase tracking-widest">Scoring & Regulation</span>
+                </div>
+              </div>
+              <p className="font-mono text-[10px] text-text-secondary leading-relaxed flex-1">
+                Computes a diminishing-return risk score based on cumulative evidence and maps vulnerabilities directly to **DORA Article 28**, **SOC 2 CC9.2**, and **ISO A.15** frameworks.
+              </p>
+            </div>
+          </div>
         </div>
 
       </div>

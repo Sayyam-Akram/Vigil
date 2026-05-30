@@ -179,9 +179,19 @@ export default function App() {
       summary: `Timeline replay initiated for ${vendorName}. Replaying signal detection chronology...`,
     });
 
-    // Scroll to the validation section
+    // Reset Agent States to default clean states for historical reconstruction
+    setAgentStates({
+      sentinel: { status: 'idle', message: 'Awaiting historical trace trigger...' },
+      scout: { status: 'idle', message: 'Ready.' },
+      extractor: { status: 'idle', message: 'Ready.' },
+      browser: { status: 'idle', message: 'Ready.' },
+      analyst: { status: 'idle', message: 'Ready.' },
+      compliance: { status: 'idle', message: 'Ready.' }
+    });
+
+    // Scroll to the agent status panel section
     setTimeout(() => {
-      const el = document.getElementById('validation');
+      const el = document.getElementById('agents-panel');
       if (el) el.scrollIntoView({ behavior: 'smooth' });
     }, 300);
 
@@ -198,6 +208,40 @@ export default function App() {
     // Feed signals one at a time with 2-second intervals
     allSignals.forEach((signal, index) => {
       const timer = setTimeout(() => {
+        // Update Agent States dynamically to show historical agent progression!
+        setAgentStates(prev => {
+          const isLast = index === allSignals.length - 1;
+          const nextStates = { ...prev };
+          
+          if (index === 0) {
+            nextStates.sentinel = { status: 'running', message: `Reconstructing historical multi-agent threat sequence for '${vendorName}'...` };
+            nextStates.scout = { status: 'running', message: 'Replaying Scout Agent historical discovery queries...' };
+          } else if (index === 1) {
+            nextStates.scout = { status: 'complete', message: 'Scout Agent discovery completed. Found active threat records.' };
+            nextStates.extractor = { status: 'running', message: 'Replaying Extractor Agent deep crawl of static news & pastebin dumps...' };
+          } else if (index === 2) {
+            nextStates.extractor = { status: 'complete', message: 'Extractor Agent retrieved plaintext credential dumps.' };
+            nextStates.browser = { status: 'running', message: 'Replaying Browser Agent remote CDP connection for dynamic JS portals...' };
+          } else if (index === Math.floor(allSignals.length / 2)) {
+            nextStates.browser = { status: 'complete', message: 'CDP browser rendered dynamic incident components.' };
+            nextStates.analyst = { status: 'running', message: 'Replaying Analyst Agent high-speed threat classification via Llama-3.3-70B...' };
+          } else if (index === allSignals.length - 2) {
+            nextStates.analyst = { status: 'complete', message: `Analyst validated historical threat models for ${vendorName}.` };
+            nextStates.compliance = { status: 'running', message: 'Replaying Compliance Agent risk index calculation and DORA/SOC2 map...' };
+          } else if (isLast) {
+            nextStates.compliance = { status: 'complete', message: 'Historical compliance and regulatory exceptions compiled.' };
+            nextStates.sentinel = { status: 'complete', message: `Historical trace reconstructed. Computed Risk: ${sourceAnalysis.risk_tier} (${sourceAnalysis.risk_score}/10).` };
+          }
+          
+          return nextStates;
+        });
+
+        // Scroll to validation view when signals start populating (after scout/extractor run)
+        if (index === 1) {
+          const validationEl = document.getElementById('validation');
+          if (validationEl) validationEl.scrollIntoView({ behavior: 'smooth' });
+        }
+
         setVendorData(prev => {
           const updatedSignals = [...prev.signals, signal];
           const { score, tier } = calculateRiskScore(updatedSignals);
@@ -552,9 +596,13 @@ export default function App() {
           <PipelineVisualizer />
 
           {/* SECTION 4.5 - ACTIVE AGENTS PANEL */}
-          {pipelineMode === 'scanning' && (
+          {(pipelineMode === 'scanning' || pipelineMode === 'replaying') && (
             <div id="agents-panel" className="max-w-7xl mx-auto w-full px-6 py-6 border-b border-white/5 scroll-mt-20">
-              <AgentStatusPanel agentStates={agentStates} vendorName={vendorData.vendor} />
+              <AgentStatusPanel 
+                agentStates={agentStates} 
+                vendorName={vendorData.vendor} 
+                isReplay={pipelineMode === 'replaying'}
+              />
             </div>
           )}
 
