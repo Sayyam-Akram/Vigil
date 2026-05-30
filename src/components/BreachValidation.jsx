@@ -213,7 +213,18 @@ export default function BreachValidation({ vendorData, replayMode }) {
               <div className="space-y-1">
                 <div className="text-text-tertiary">SOURCE: <span className="text-text-primary">{selectedSignal.source}</span></div>
                 {selectedSignal.source_url && (
-                  <div className="text-text-tertiary">EVIDENCE LINK: <a href={selectedSignal.source_url} target="_blank" rel="noopener noreferrer" className="text-brand-blue underline break-all">{selectedSignal.source_url}</a></div>
+                  <div className="text-text-tertiary">
+                    EVIDENCE LINK:{' '}
+                    <a 
+                      href={selectedSignal.source_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="text-brand-blue hover:text-brand-green visited:text-brand-blue underline break-all"
+                      style={{ color: 'var(--blue)' }}
+                    >
+                      {selectedSignal.source_url}
+                    </a>
+                  </div>
                 )}
                 <div className="text-text-tertiary text-[11px] leading-relaxed mt-2 text-text-secondary">
                   {selectedSignal.detail}
