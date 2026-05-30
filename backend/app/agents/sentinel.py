@@ -43,8 +43,8 @@ class SentinelAgent(BaseAgent):
             f"Deploying Extractor and Browser agents in parallel for deep crawling ({len(static_urls)} static pages, {len(js_urls)} JS-heavy pages)..."
         )
         
-        extractor_task = self.extractor.execute({"urls": static_urls})
-        browser_task = self.browser.execute({"urls": js_urls})
+        extractor_task = self.extractor.execute({"urls": static_urls, "vendor": vendor})
+        browser_task = self.browser.execute({"urls": js_urls, "vendor": vendor})
         
         extractor_result, browser_result = await asyncio.gather(extractor_task, browser_task)
         

@@ -12,6 +12,7 @@ class BrowserAgent(BaseAgent):
 
     async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         urls = context.get("urls", [])
+        vendor = context.get("vendor", "")
         if not urls:
             await self.report_status("complete", "No dynamic JS-heavy URLs to inspect")
             return {"browser_results": []}
@@ -32,7 +33,7 @@ class BrowserAgent(BaseAgent):
                 "Missing Scraping Browser credentials, employing secure mock simulation fallback"
             )
             # Run simulation
-            tasks = [self._simulate_scrape(url) for url in urls]
+            tasks = [self._simulate_scrape(url, vendor=vendor) for url in urls]
             results = await asyncio.gather(*tasks)
         else:
             # Run live CDP browser scrapes in parallel
@@ -94,7 +95,7 @@ class BrowserAgent(BaseAgent):
 
         return result
 
-    async def _simulate_scrape(self, url: str, source_label: str = "scraping_browser_mock") -> Dict[str, Any]:
+    async def _simulate_scrape(self, url: str, source_label: str = "scraping_browser_mock", vendor: str = "TargetCorp") -> Dict[str, Any]:
         # Short artificial delay to simulate browser boot up and page navigation
         await asyncio.sleep(1.5)
         
@@ -103,8 +104,8 @@ class BrowserAgent(BaseAgent):
         content = ""
         
         if "nvd.nist.gov" in url_lower:
-            title = "NVD - CVE-2024-3094 Detail (Dynamic Portal)"
-            content = """
+            title = f"NVD - {vendor} CVE Detail (Dynamic Portal)"
+            content = f"""
             [DYNAMIC JS RENDERED TABULAR DATA - NVD RECORD]
             CVE ID: CVE-2024-3094
             CVSS v3 Severity Score: 10.0 CRITICAL
@@ -121,16 +122,17 @@ class BrowserAgent(BaseAgent):
             
             INTELLIGENCE SUMMARY:
             The exploit intercepts sshd authentication routines. Threat actors with the corresponding private key can gain root access to the target host. Active scanning tools have flagged attempts in the wild.
+            Critical vulnerability discovered affecting {vendor}'s upstream staging libraries. Enforce strict boundary firewalls immediately.
             """
         elif "status" in url_lower:
-            title = f"System Status Center - Live Monitoring"
+            title = f"{vendor} Status Center - Live Monitoring"
             content = f"""
             [LIVE INCIDENT UPDATE PANEL - REACT REACTIVE APP]
             SYSTEM STATUS: DEGRADED OUTAGE (Active Incident)
             
-            Incident Title: Unauthorized Session Exfiltration Alert
+            Incident Title: Unauthorized Session Exfiltration Alert at {vendor}
             Timeline of Events:
-            - 04:12 UTC: Automated security systems flagged suspicious outbound session replay queries.
+            - 04:12 UTC: Automated security systems flagged suspicious outbound session replay queries at {vendor}.
             - 04:30 UTC: Security incident response team (SIRT) activated.
             - 05:15 UTC: Ingress path locked down. Stolen corporate credentials identified as access vector.
             - 07:00 UTC: Mitigated. Credential rotation mandated across all backend nodes.
@@ -139,12 +141,12 @@ class BrowserAgent(BaseAgent):
             A subset of user database caches containing customer contact info, billing references, and hashed tokens was exposed. Live connections have been reset.
             """
         elif "securityscorecard" in url_lower or "bitsight" in url_lower:
-            title = "Security Rating and Supply Chain Assessment Panel"
-            content = """
+            title = f"Security Rating and Supply Chain Assessment Panel for {vendor}"
+            content = f"""
             [SUPPLY CHAIN DATA PORTAL - BITSIGHT & SECURITYSCORECARD]
             Vendor Cyber Security Grade: D (64/100)
             
-            Critical Issues Detected:
+            Critical Issues Detected for {vendor}:
             1. 3 compromised employee credentials leaked in the past 14 days.
             2. Exposed endpoint running vulnerable Apache version (CVE-2023-25690).
             3. Incomplete SPF/DKIM mail verification settings.
@@ -156,15 +158,15 @@ class BrowserAgent(BaseAgent):
             Trend: DOWNWARD DEGRADATION. Supply chain risk elevated due to persistent leak vectors.
             """
         else:
-            title = "JS Rendered Dynamic Document"
+            title = f"{vendor} Dynamic Document"
             content = f"""
             [DYNAMIC RENDERED CONTAINER]
             URL: {url}
             Scrape Timestamp: {settings.HOST}
             
             This JS-rendered interface was captured via remote Scraping Browser emulation.
-            Dynamic elements have been resolved:
-            - Threat indicators: HIGH RISK detected
+            Dynamic elements have been resolved for {vendor}:
+            - Threat indicators: HIGH RISK detected for {vendor}
             - Session variables: EXPOSED credentials referenced in raw debug dumps
             - Remediation suggestions: Rotate all API endpoints and enforce multi-factor authentication.
             """

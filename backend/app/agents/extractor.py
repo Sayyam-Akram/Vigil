@@ -12,13 +12,14 @@ class ExtractorAgent(BaseAgent):
 
     async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         urls = context.get("urls", [])
+        vendor = context.get("vendor", "")
         if not urls:
             await self.report_status("complete", "No static URLs to extract content from")
             return {"deep_results": []}
 
         await self.report_status("running", f"Deploying Web Unlocker deep extraction for {len(urls)} static URLs")
         
-        tasks = [self._scrape_url(url) for url in urls]
+        tasks = [self._scrape_url(url, vendor) for url in urls]
         results = await asyncio.gather(*tasks)
         
         successful_scrapes = [r for r in results if r["success"]]
@@ -30,9 +31,9 @@ class ExtractorAgent(BaseAgent):
         
         return {"deep_results": results}
 
-    async def _scrape_url(self, url: str) -> Dict[str, Any]:
+    async def _scrape_url(self, url: str, vendor: str) -> Dict[str, Any]:
         await self.report_status("running", f"Deep scraping static URL via Web Unlocker: {url[:60]}...")
-        res = await scrape_deep_content_via_unlocker(url)
+        res = await scrape_deep_content_via_unlocker(url, vendor)
         
         if res.get("success"):
             await self.report_status("running", f"Successfully extracted static content ({len(res.get('text', ''))} chars) from {url[:50]}")

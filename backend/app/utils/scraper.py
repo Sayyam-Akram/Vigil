@@ -197,7 +197,7 @@ def _is_deep_scrape_worthy(url: str) -> bool:
 # STEP 2: DEEP EXTRACTION — Web Unlocker via Bright Data /request API
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def scrape_deep_content_via_unlocker(target_url: str) -> Dict[str, Any]:
+async def scrape_deep_content_via_unlocker(target_url: str, vendor: str = "TargetCorp") -> Dict[str, Any]:
     """
     Uses Bright Data Web Unlocker (vendorsentinel_unlocker zone) to retrieve
     raw plaintext content from a candidate leak/breach URL.
@@ -218,7 +218,7 @@ async def scrape_deep_content_via_unlocker(target_url: str) -> Dict[str, Any]:
 
     if not api_key or not zone:
         logger.info(f"      No Web Unlocker credentials → mock fallback for {target_url[:60]}")
-        result["text"] = _get_deep_scrape_mock(target_url)
+        result["text"] = _get_deep_scrape_mock(target_url, vendor)
         result["data_source"] = "mock (no credentials)"
         result["success"] = True
         return result
@@ -249,26 +249,29 @@ async def scrape_deep_content_via_unlocker(target_url: str) -> Dict[str, Any]:
             else:
                 error_preview = response.text[:200] if response.text else "No response body"
                 logger.warning(f"      ⚠️ Web Unlocker HTTP {response.status_code} for {target_url[:60]}: {error_preview}")
-                result["text"] = _get_deep_scrape_mock(target_url)
+                result["text"] = _get_deep_scrape_mock(target_url, vendor)
                 result["data_source"] = "mock (HTTP error fallback)"
                 result["success"] = True
     except httpx.TimeoutException:
         logger.warning(f"      ⏳ Web Unlocker timeout for {target_url[:60]} → mock fallback")
-        result["text"] = _get_deep_scrape_mock(target_url)
+        result["text"] = _get_deep_scrape_mock(target_url, vendor)
         result["data_source"] = "mock (timeout fallback)"
         result["success"] = True
     except Exception as e:
         logger.warning(f"      ❌ Web Unlocker error: {e} → mock fallback")
-        result["text"] = _get_deep_scrape_mock(target_url)
+        result["text"] = _get_deep_scrape_mock(target_url, vendor)
         result["data_source"] = "mock (connection fallback)"
         result["success"] = True
 
     return result
 
 
-def _get_deep_scrape_mock(url: str) -> str:
+def _get_deep_scrape_mock(url: str, vendor: str = None) -> str:
     """Realistic mock content for deep-scraped URLs when Web Unlocker is unavailable."""
     url_lower = url.lower()
+    if not vendor or vendor == "TargetCorp":
+        vendor = _extract_vendor_from_url(url)
+    vendor_domain = vendor.lower().replace(" ", "")
 
     if "pastebin" in url_lower or "paste" in url_lower:
         return """[PASTE DUMP — Raw Credential Block]
